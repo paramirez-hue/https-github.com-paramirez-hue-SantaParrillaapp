@@ -4,7 +4,8 @@ import { FoodItem } from './types';
 // CONFIGURACIÓN PREDETERMINADA DEL NEGOCIO
 export const DEFAULT_BRANDING = {
   name: 'Santa Parrilla',
-  logoUrl: 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png' // Puedes cambiar esto por tu URL fija
+  logoUrl: 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png', // Puedes cambiar esto por tu URL fija
+  whatsappPhone: '573000000000' // Número de WhatsApp predeterminado (con código de país)
 };
 
 export const INITIAL_MENU: FoodItem[] = [

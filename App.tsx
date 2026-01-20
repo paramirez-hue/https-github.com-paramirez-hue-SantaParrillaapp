@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   UtensilsCrossed, Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2, Database, AlertTriangle, CloudOff, ChevronRight, Save, Check, PlusCircle, Info, Upload, Camera
+  Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2, Database, AlertTriangle, CloudOff, ChevronRight, Save, Check, PlusCircle, Info, Upload, Camera, MessageCircle, ArrowRight
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType } from './types';
@@ -34,6 +34,7 @@ const OrderTimer: React.FC<{ startTime: any }> = ({ startTime }) => {
 };
 
 const App: React.FC = () => {
+  const [hasEntered, setHasEntered] = useState(false);
   const [isStaffMode, setIsStaffMode] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [activeView, setActiveView] = useState<ViewType>('menu');
@@ -79,7 +80,8 @@ const App: React.FC = () => {
       if (settingsData) {
         setRestaurantSettings({ 
           name: settingsData.name, 
-          logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl
+          logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl,
+          whatsappPhone: settingsData.whatsappPhone || DEFAULT_BRANDING.whatsappPhone
         });
       }
     } catch (err) {
@@ -104,7 +106,8 @@ const App: React.FC = () => {
       const { error } = await supabase.from('settings').upsert({ 
         id: 'branding', 
         name: restaurantSettings.name,
-        logoUrl: restaurantSettings.logoUrl 
+        logoUrl: restaurantSettings.logoUrl,
+        whatsappPhone: restaurantSettings.whatsappPhone
       });
       if (error) {
         if (error.message.includes('row-level security')) setRlsErrorVisible(true);
@@ -152,6 +155,15 @@ const App: React.FC = () => {
     });
   };
 
+  const sendWhatsAppNotification = (orderData: any) => {
+    const phone = restaurantSettings.whatsappPhone || DEFAULT_BRANDING.whatsappPhone;
+    const itemsList = orderData.items.map((i: any) => `- ${i.quantity}x ${i.name} ($${(i.price * i.quantity).toFixed(2)})`).join('%0A');
+    const text = `🔥 *NUEVO PEDIDO - ${restaurantSettings.name}* 🔥%0A%0A👤 *Cliente:* ${orderData.customerName}%0A📍 *Ubicación:* ${orderData.tableNumber}%0A%0A*DETALLE:*%0A${itemsList}%0A%0A💰 *TOTAL:* $${orderData.total.toFixed(2)}%0A%0A⏰ _Enviado desde la App Oficial_`;
+    
+    const whatsappUrl = `https://wa.me/${phone}?text=${text}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
   const handlePayment = async () => {
     if (!customerName) return alert("Ingresa tu nombre");
     setIsPaying(true);
@@ -164,9 +176,13 @@ const App: React.FC = () => {
         tableNumber: tableNumber || 'Llevar',
         createdAt: new Date().toISOString()
       };
+      
       const { error } = await supabase.from('orders').insert([newOrder]);
       if (error && error.message.includes('row-level security')) setRlsErrorVisible(true);
       
+      // Notificar por WhatsApp
+      sendWhatsAppNotification(newOrder);
+
       setCart([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
@@ -185,6 +201,49 @@ const App: React.FC = () => {
 
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const filteredMenu = activeCategory === 'Todas' ? menuItems : menuItems.filter(i => i.category === activeCategory);
+
+  // Pantalla de Bienvenida (Splash Screen)
+  if (!hasEntered) {
+    return (
+      <div className="fixed inset-0 z-[500] bg-[#020617] flex flex-col items-center justify-center p-8 overflow-hidden">
+        {/* Decoración de fondo */}
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-orange-600/10 blur-[120px] rounded-full"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-orange-600/5 blur-[120px] rounded-full"></div>
+        
+        <div className="relative z-10 text-center space-y-12 animate-in fade-in zoom-in duration-1000">
+          <div className="relative inline-block">
+             <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full scale-150 animate-pulse"></div>
+             <div className="w-48 h-48 md:w-64 md:h-64 bg-[#0F172A] rounded-full p-4 border-8 border-orange-500/30 shadow-[0_0_50px_rgba(249,115,22,0.2)] overflow-hidden relative">
+               <img 
+                 src={restaurantSettings.logoUrl} 
+                 className="w-full h-full object-cover scale-110" 
+                 alt="Logo"
+               />
+             </div>
+          </div>
+          
+          <div className="space-y-4">
+            <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter">
+              Bienvenido a <br/>
+              <span className="text-orange-500 not-italic">{restaurantSettings.name}</span>
+            </h1>
+          </div>
+          
+          <button 
+            onClick={() => setHasEntered(true)}
+            className="group relative px-12 py-6 bg-orange-600 hover:bg-orange-500 text-white rounded-[2rem] font-black uppercase text-sm tracking-[0.3em] shadow-2xl shadow-orange-600/40 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
+          >
+            Ingresar a la Parrilla
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
+          </button>
+        </div>
+        
+        <div className="absolute bottom-10 left-0 right-0 text-center">
+           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">© 2024 Santa Parrilla - Gestión Premium</p>
+        </div>
+      </div>
+    );
+  }
 
   const NavContent = () => (
     <div className="flex flex-col h-full bg-[#020617]">
@@ -356,18 +415,25 @@ const App: React.FC = () => {
                           {isSavingBranding ? 'Guardando...' : brandingSaved ? <><Check className="w-5 h-5" /> ¡Guardado!</> : <><Save className="w-5 h-5" /> Guardar Cambios</>}
                         </button>
                     </div>
-                    <div className="grid grid-cols-1 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-3">
                           <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre Comercial</label>
                           <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Nombre de tu negocio" />
                         </div>
-                        <div className="p-6 bg-[#020617] rounded-[2rem] border border-orange-500/20 flex flex-col md:flex-row items-center gap-6">
-                           <div className="p-4 bg-orange-600/10 rounded-full"><Upload className="w-6 h-6 text-orange-400" /></div>
-                           <div className="text-center md:text-left">
-                             <p className="text-[11px] font-black text-white uppercase tracking-widest">Haz clic en el logo arriba para subir el archivo que me pasaste.</p>
-                             <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 italic">Soporta PNG, JPG y SVG.</p>
-                           </div>
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">WhatsApp de Pedidos</label>
+                          <div className="relative">
+                            <MessageCircle className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-500" />
+                            <input type="text" value={restaurantSettings.whatsappPhone || ''} onChange={e => setRestaurantSettings({...restaurantSettings, whatsappPhone: e.target.value})} className="w-full p-6 pl-14 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Ej: 573000000000" />
+                          </div>
                         </div>
+                    </div>
+                    <div className="mt-8 p-6 bg-[#020617] rounded-[2rem] border border-orange-500/20 flex flex-col md:flex-row items-center gap-6">
+                       <div className="p-4 bg-orange-600/10 rounded-full"><Upload className="w-6 h-6 text-orange-400" /></div>
+                       <div className="text-center md:text-left">
+                         <p className="text-[11px] font-black text-white uppercase tracking-widest">Haz clic en el logo arriba para subir el archivo que me pasaste.</p>
+                         <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 italic">Soporta PNG, JPG y SVG.</p>
+                       </div>
                     </div>
                 </div>
 
