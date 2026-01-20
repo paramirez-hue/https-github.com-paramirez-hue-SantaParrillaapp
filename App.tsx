@@ -4,7 +4,7 @@ import {
   ShoppingBag, ClipboardList, ChefHat, BarChart3, Sparkles, Plus, Minus, Trash2, X,
   UtensilsCrossed, Timer, ShoppingBasket, Edit2, Search, Lock, LogOut, ChevronLeft,
   ChevronRight, Settings, Store, Camera, LayoutGrid, Home, Upload, DollarSign, Wifi,
-  AlertCircle, CheckCircle2, Info
+  AlertCircle, CheckCircle2, Info, Image as ImageIcon, Save, Menu as MenuIcon
 } from 'lucide-react';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, PaymentStatus } from './types';
 import { INITIAL_MENU, CATEGORIES } from './constants';
@@ -65,25 +65,51 @@ const App: React.FC = () => {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
+  
+  // Estados para personalización del negocio
+  const [restaurantSettings, setRestaurantSettings] = useState({
+    name: 'Santa Parrilla',
+    logoUrl: ''
+  });
 
   useEffect(() => {
     if (isFirebaseEnabled && db) {
+      // Sincronizar Menú
       const unsubMenu = onSnapshot(collection(db, "menu"), (snapshot) => {
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FoodItem[];
         setMenuItems(items.length > 0 ? items : INITIAL_MENU);
       });
+      // Sincronizar Pedidos
       const unsubOrders = onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snapshot) => {
         const o = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Order[];
         setOrders(o);
       });
-      return () => { unsubMenu(); unsubOrders(); };
+      // Sincronizar Configuración
+      const unsubSettings = onSnapshot(doc(db, "settings", "branding"), (snapshot) => {
+        if (snapshot.exists()) {
+          setRestaurantSettings(snapshot.data() as any);
+        }
+      });
+      return () => { unsubMenu(); unsubOrders(); unsubSettings(); };
     } else {
       const savedMenu = localStorage.getItem('santa_menu');
       setMenuItems(savedMenu ? JSON.parse(savedMenu) : INITIAL_MENU);
       const savedOrders = localStorage.getItem('santa_orders');
       setOrders(savedOrders ? JSON.parse(savedOrders) : []);
+      const savedSettings = localStorage.getItem('santa_settings');
+      if (savedSettings) setRestaurantSettings(JSON.parse(savedSettings));
     }
   }, []);
+
+  const saveBranding = async (newName: string, newLogo: string) => {
+    const newSettings = { name: newName, logoUrl: newLogo };
+    setRestaurantSettings(newSettings);
+    if (isFirebaseEnabled && db) {
+      await setDoc(doc(db, "settings", "branding"), newSettings);
+    } else {
+      localStorage.setItem('santa_settings', JSON.stringify(newSettings));
+    }
+  };
 
   const handlePayment = async () => {
     if (!customerName) return alert("Por favor, ingresa tu nombre");
@@ -139,13 +165,17 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-[#FAF9F6] text-slate-900 font-sans">
       
-      {/* SIDEBAR DESKTOP - Mejorada para acceso Admin */}
-      <nav className="hidden md:flex flex-col bg-slate-950 text-white sticky top-0 h-screen w-64 border-r border-white/10">
+      {/* SIDEBAR DESKTOP */}
+      <nav className="hidden md:flex flex-col bg-slate-950 text-white sticky top-0 h-screen w-64 border-r border-white/10 shrink-0">
         <div className="p-8 text-center">
-          <div className="w-14 h-14 bg-orange-600 rounded-2xl mx-auto flex items-center justify-center mb-3 shadow-lg shadow-orange-600/20">
-            <UtensilsCrossed className="w-7 h-7" />
+          <div className="w-16 h-16 bg-orange-600 rounded-2xl mx-auto flex items-center justify-center mb-3 shadow-lg shadow-orange-600/20 overflow-hidden">
+            {restaurantSettings.logoUrl ? (
+                <img src={restaurantSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+            ) : (
+                <UtensilsCrossed className="w-8 h-8" />
+            )}
           </div>
-          <h1 className="text-sm font-black uppercase tracking-widest">Santa Parrilla</h1>
+          <h1 className="text-sm font-black uppercase tracking-widest truncate">{restaurantSettings.name}</h1>
           <p className="text-[8px] font-bold text-slate-500 uppercase mt-1">Management System</p>
         </div>
         
@@ -183,37 +213,65 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      <div className="flex-1 flex flex-col pb-20 md:pb-0">
+      <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 bg-white/80 backdrop-blur-md border-b z-40 px-6 py-4 flex justify-between items-center shadow-sm">
-          <div className="flex flex-col">
-            <h2 className="text-lg font-black uppercase tracking-tight leading-none">
-                {isStaffMode ? (activeView === 'kitchen' ? 'Monitor de Cocina' : 'Administración') : 'Carta Digital'}
-            </h2>
-            <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest mt-1">
-                {isStaffMode ? 'Área Restringida' : activeCategory}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="md:hidden w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                {restaurantSettings.logoUrl ? (
+                    <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" />
+                ) : (
+                    <div className="w-full h-full bg-orange-600 flex items-center justify-center text-white"><UtensilsCrossed className="w-4 h-4" /></div>
+                )}
+            </div>
+            <div className="flex flex-col">
+                <h2 className="text-sm md:text-lg font-black uppercase tracking-tight leading-none truncate max-w-[150px] md:max-w-none">
+                    {isStaffMode ? (activeView === 'kitchen' ? 'Monitor de Cocina' : 'Administración') : restaurantSettings.name}
+                </h2>
+                {!isStaffMode && <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest mt-1">{activeCategory}</span>}
+            </div>
           </div>
           {!isStaffMode && (
-            <button onClick={() => setIsCartOpen(true)} className="bg-slate-950 text-white px-6 py-3 rounded-2xl flex items-center gap-3 relative shadow-xl active:scale-95 transition-all">
+            <button onClick={() => setIsCartOpen(true)} className="bg-slate-950 text-white px-4 md:px-6 py-2 md:py-3 rounded-2xl flex items-center gap-2 md:gap-3 relative shadow-xl active:scale-95 transition-all">
               <ShoppingBag className="w-4 h-4" />
-              <span className="font-black text-sm">${cartTotal.toFixed(2)}</span>
+              <span className="font-black text-xs md:text-sm">${cartTotal.toFixed(2)}</span>
               {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{cart.length}</span>}
             </button>
           )}
         </header>
 
-        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+        {/* SELECTOR DE CATEGORÍAS MÓVIL (HORIZONTAL) */}
+        {!isStaffMode && activeView === 'menu' && (
+            <div className="md:hidden bg-white border-b overflow-x-auto no-scrollbar flex items-center gap-2 px-4 py-3 sticky top-[65px] z-30 shadow-sm">
+                <button 
+                    onClick={() => setActiveCategory('Todas')}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeCategory === 'Todas' ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+                >
+                    Todas
+                </button>
+                {CATEGORIES.map(c => (
+                    <button 
+                        key={c.id}
+                        onClick={() => setActiveCategory(c.id)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all flex items-center gap-2 ${activeCategory === c.id ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+                    >
+                        <span>{c.icon}</span> {c.id}
+                    </button>
+                ))}
+            </div>
+        )}
+
+        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-32 md:pb-8">
           {activeView === 'menu' && !isStaffMode && (
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
               {filteredMenu.map(item => (
                 <div key={item.id} className="bg-white rounded-3xl border overflow-hidden shadow-sm flex flex-col h-full group hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                  <div className="h-40 md:h-52 overflow-hidden bg-slate-100 relative">
+                  <div className="h-32 md:h-52 overflow-hidden bg-slate-100 relative">
                     <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-xl text-[11px] font-black shadow-sm">${item.price.toFixed(2)}</div>
+                    <div className="absolute top-2 md:top-3 right-2 md:right-3 bg-white/90 backdrop-blur px-2 md:px-3 py-1 md:py-1.5 rounded-xl text-[9px] md:text-[11px] font-black shadow-sm">${item.price.toFixed(2)}</div>
                   </div>
-                  <div className="p-5 flex flex-col flex-1">
-                    <h3 className="text-sm font-black text-slate-800 line-clamp-1 mb-1 uppercase tracking-tight">{item.name}</h3>
-                    <p className="text-[10px] text-slate-400 line-clamp-2 mb-4 leading-relaxed h-8">{item.description}</p>
+                  <div className="p-3 md:p-5 flex flex-col flex-1">
+                    <h3 className="text-[11px] md:text-sm font-black text-slate-800 line-clamp-1 mb-1 uppercase tracking-tight">{item.name}</h3>
+                    <p className="text-[8px] md:text-[10px] text-slate-400 line-clamp-2 mb-3 md:mb-4 leading-relaxed h-6 md:h-8">{item.description}</p>
                     <button 
                       onClick={() => {
                         setCart(prev => {
@@ -222,9 +280,9 @@ const App: React.FC = () => {
                           return [...prev, { ...item, quantity: 1 }];
                         });
                       }} 
-                      className="mt-auto w-full py-3 bg-slate-50 hover:bg-slate-950 hover:text-white transition-all rounded-2xl font-black text-[10px] uppercase border border-slate-100"
+                      className="mt-auto w-full py-2.5 md:py-3 bg-slate-50 hover:bg-slate-950 hover:text-white transition-all rounded-xl md:rounded-2xl font-black text-[8px] md:text-[10px] uppercase border border-slate-100"
                     >
-                      Añadir a Orden
+                      Añadir
                     </button>
                   </div>
                 </div>
@@ -274,7 +332,37 @@ const App: React.FC = () => {
           )}
 
           {isStaffMode && activeView === 'admin' && (
-            <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20">
+              
+              {/* CONFIGURACIÓN DEL NEGOCIO */}
+              <div className="bg-white p-8 rounded-[40px] border shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b pb-4">
+                    <Store className="w-6 h-6 text-orange-600" />
+                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Configuración del <span className="text-orange-600 not-italic">Negocio</span></h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre del Restaurante</label>
+                        <input 
+                            type="text" 
+                            value={restaurantSettings.name} 
+                            onChange={(e) => saveBranding(e.target.value, restaurantSettings.logoUrl)}
+                            className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" 
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">URL del Logo (Opcional)</label>
+                        <input 
+                            type="text" 
+                            placeholder="https://..."
+                            value={restaurantSettings.logoUrl} 
+                            onChange={(e) => saveBranding(restaurantSettings.name, e.target.value)}
+                            className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" 
+                        />
+                    </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white p-6 rounded-[32px] border shadow-sm flex items-center gap-5">
                   <div className={`p-4 rounded-2xl ${isFirebaseEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -308,7 +396,7 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center bg-white p-6 rounded-[32px] border">
                 <div>
                     <h3 className="text-xl font-black uppercase tracking-tighter italic">Gestión de <span className="text-orange-600 not-italic">Menú</span></h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Edita precios y disponibilidad en tiempo real</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Edita precios y disponibilidad</p>
                 </div>
                 <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-orange-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-orange-600/20 hover:scale-105 transition-all">+ Crear Plato</button>
               </div>
@@ -345,7 +433,7 @@ const App: React.FC = () => {
       </div>
 
       {/* MOBILE NAV */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-[0_-8px_30px_rgb(0,0,0,0.12)]">
         <MobileNavItem icon={<Home />} label="Menú" active={!isStaffMode && activeView === 'menu'} onClick={() => { setIsStaffMode(false); setActiveView('menu'); }} />
         <MobileNavItem icon={<ChefHat />} label="Cocina" active={isStaffMode && activeView === 'kitchen'} onClick={() => { setIsStaffMode(true); setActiveView('kitchen'); }} />
         <MobileNavItem icon={isStaffMode ? <Settings /> : <Lock />} label={isStaffMode ? "Panel" : "Staff"} active={isStaffMode && activeView === 'admin'} onClick={() => isStaffMode ? setActiveView('admin') : setShowLogin(true)} />
@@ -379,7 +467,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* CARRITO Y FORMULARIOS (SIN CAMBIOS ESTRUCTURALES) */}
+      {/* CARRITO */}
       {isCartOpen && (
         <div className="fixed inset-0 z-[60] flex justify-end">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
@@ -418,7 +506,7 @@ const App: React.FC = () => {
                   </>
                 )}
              </div>
-             <div className="p-10 border-t bg-white">
+             <div className="p-10 border-t bg-white pb-safe">
                 <div className="flex justify-between items-end mb-10">
                   <div>
                     <span className="text-[11px] font-black uppercase text-slate-400">Total a pagar</span>
@@ -483,35 +571,35 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
   const [data, setData] = useState(item || { name: '', price: 0, category: 'Hamburguesas', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&h=300', description: '' });
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[110] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in duration-300">
-      <div className="bg-white w-full max-w-lg rounded-[56px] p-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
-        <h2 className="text-3xl font-black uppercase tracking-tighter mb-10 italic">{item ? 'Actualizar' : 'Crear'} <span className="text-orange-600 not-italic">Plato</span></h2>
-        <div className="space-y-6">
+      <div className="bg-white w-full max-w-lg rounded-[56px] p-8 md:p-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
+        <h2 className="text-2xl md:text-3xl font-black uppercase tracking-tighter mb-8 md:mb-10 italic">{item ? 'Actualizar' : 'Crear'} <span className="text-orange-600 not-italic">Plato</span></h2>
+        <div className="space-y-4 md:space-y-6">
             <div className="space-y-2">
                 <p className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre del producto</p>
-                <input type="text" placeholder="Ej: Burger Monster" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[28px] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 transition-all shadow-inner" />
+                <input type="text" placeholder="Ej: Burger Monster" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-[28px] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 transition-all shadow-inner" />
             </div>
           <div className="flex gap-4">
               <div className="flex-1 space-y-2">
                   <p className="text-[10px] font-black text-slate-400 uppercase ml-2">Precio ($)</p>
-                  <input type="number" placeholder="0.00" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-6 bg-slate-50 rounded-[28px] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 transition-all shadow-inner" />
+                  <input type="number" placeholder="0.00" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-[28px] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 transition-all shadow-inner" />
               </div>
               <div className="flex-1 space-y-2">
                   <p className="text-[10px] font-black text-slate-400 uppercase ml-2">Categoría</p>
-                  <select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[28px] font-black text-[10px] outline-none border-2 border-transparent focus:border-slate-200 transition-all uppercase shadow-inner">
+                  <select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-[28px] font-black text-[10px] outline-none border-2 border-transparent focus:border-slate-200 transition-all uppercase shadow-inner">
                     {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
                   </select>
               </div>
           </div>
           <div className="space-y-2">
               <p className="text-[10px] font-black text-slate-400 uppercase ml-2">URL de Imagen</p>
-              <input type="text" placeholder="https://..." value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[28px] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 transition-all shadow-inner" />
+              <input type="text" placeholder="https://..." value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-[28px] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 transition-all shadow-inner" />
           </div>
           <div className="space-y-2">
               <p className="text-[10px] font-black text-slate-400 uppercase ml-2">Descripción</p>
-              <textarea placeholder="Ingredientes, alérgenos..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[28px] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 transition-all h-32 shadow-inner" />
+              <textarea placeholder="Ingredientes, alérgenos..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-[28px] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 transition-all h-24 md:h-32 shadow-inner" />
           </div>
           <div className="pt-6 space-y-4">
-            <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[28px] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl shadow-orange-600/30 hover:scale-[1.02] active:scale-95 transition-all">Guardar Cambios</button>
+            <button onClick={() => onSave(data)} className="w-full py-5 md:py-6 bg-orange-600 text-white rounded-[28px] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl shadow-orange-600/30 hover:scale-[1.02] active:scale-95 transition-all">Guardar Cambios</button>
             <button onClick={onClose} className="w-full py-4 text-[10px] font-black text-slate-400 hover:text-slate-900 uppercase transition-colors">Cancelar</button>
           </div>
         </div>
