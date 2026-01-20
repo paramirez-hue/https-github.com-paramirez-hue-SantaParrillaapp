@@ -207,15 +207,16 @@ const App: React.FC = () => {
               </div>
 
               <div className="space-y-4">
-                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Navegación</p>
+                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Menú</p>
                   <SidebarItem icon={<LayoutGrid />} label="Todas" active={activeCategory === 'Todas'} onClick={() => { setActiveCategory('Todas'); setIsMobileMenuOpen(false); }} />
                   {CATEGORIES.map(c => (
                     <SidebarItem key={c.id} icon={<span>{c.icon}</span>} label={c.id} active={activeCategory === c.id} onClick={() => { setActiveCategory(c.id); setIsMobileMenuOpen(false); }} />
                   ))}
                   
-                  <div className="pt-10 border-t border-white/10 mt-6">
-                    <button onClick={() => { setIsMobileMenuOpen(false); setShowLogin(true); }} className="w-full p-4 bg-orange-600/10 rounded-2xl flex items-center gap-4 text-orange-500 font-black text-[10px] uppercase">
-                        <Lock className="w-5 h-5" /> Acceso Staff
+                  {/* El botón de acceso staff ahora está más oculto al final del menú lateral */}
+                  <div className="pt-10 border-t border-white/10 mt-6 opacity-40">
+                    <button onClick={() => { setIsMobileMenuOpen(false); setShowLogin(true); }} className="w-full p-4 bg-white/5 rounded-2xl flex items-center gap-4 text-white font-black text-[10px] uppercase">
+                        <Lock className="w-4 h-4" /> Configuración
                     </button>
                   </div>
               </div>
@@ -230,7 +231,7 @@ const App: React.FC = () => {
             </button>
             <div className="flex flex-col">
                 <h2 className="text-sm md:text-lg font-black uppercase tracking-tight leading-none truncate max-w-[140px] md:max-w-none">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina Realtime' : 'Admin Panel') : restaurantSettings.name}
+                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina' : 'Admin') : restaurantSettings.name}
                 </h2>
                 {!isStaffMode && <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest mt-1">{activeCategory}</span>}
             </div>
@@ -240,6 +241,11 @@ const App: React.FC = () => {
               <ShoppingBag className="w-4 h-4" />
               <span className="font-black text-xs md:text-sm">${cartTotal.toFixed(2)}</span>
               {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{cart.length}</span>}
+            </button>
+          )}
+          {isStaffMode && (
+            <button onClick={() => { setIsStaffMode(false); setActiveView('menu'); }} className="md:hidden p-2.5 bg-red-50 text-red-600 rounded-xl active:scale-90 transition-all">
+              <LogOut className="w-6 h-6" />
             </button>
           )}
         </header>
@@ -384,12 +390,14 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* MOBILE BOTTOM NAV */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-2xl">
-        <MobileNavItem icon={<Home />} label="Carta" active={!isStaffMode && activeView === 'menu'} onClick={() => { setIsStaffMode(false); setActiveView('menu'); }} />
-        <MobileNavItem icon={<ChefHat />} label="Cocina" active={isStaffMode && activeView === 'kitchen'} onClick={() => { setIsStaffMode(true); setActiveView('kitchen'); }} />
-        <MobileNavItem icon={<Settings />} label="Admin" active={isStaffMode && activeView === 'admin'} onClick={() => isStaffMode ? setActiveView('admin') : setShowLogin(true)} />
-      </nav>
+      {/* MOBILE BOTTOM NAV - SOLO SE MUESTRA SI ES STAFF */}
+      {isStaffMode && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-2xl">
+          <MobileNavItem icon={<Home />} label="Ver Menú" active={activeView === 'menu'} onClick={() => setActiveView('menu')} />
+          <MobileNavItem icon={<ChefHat />} label="Cocina" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} />
+          <MobileNavItem icon={<Settings />} label="Admin" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
+        </nav>
+      )}
 
       {/* LOGIN MODAL */}
       {showLogin && (
