@@ -8,7 +8,7 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType } from './types';
 import { INITIAL_MENU, CATEGORIES, DEFAULT_BRANDING } from './constants';
-import { getSmartSuggestions, generateUpsellSuggestion, improveDescription, generateFoodImage } from './geminiService';
+import { improveDescription, generateFoodImage } from './geminiService';
 
 // Supabase configuration
 const SUPABASE_URL = "https://ejerqcxzvfwnccdadytj.supabase.co";
@@ -50,7 +50,6 @@ const App: React.FC = () => {
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [restaurantSettings, setRestaurantSettings] = useState(DEFAULT_BRANDING);
-  const [isUsingCloudData, setIsUsingCloudData] = useState(false);
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
   const [rlsErrorVisible, setRlsErrorVisible] = useState(false);
@@ -63,7 +62,6 @@ const App: React.FC = () => {
       const { data: menuData, error: menuError } = await supabase.from('menu').select('*');
       if (!menuError && menuData && menuData.length > 0) {
         setMenuItems(menuData);
-        setIsUsingCloudData(true);
       }
 
       const { data: ordersData, error: ordersError } = await supabase
@@ -122,20 +120,6 @@ const App: React.FC = () => {
     }
   };
 
-  const seedDatabase = async () => {
-    if (!confirm("¿Sincronizar menú inicial con la nube?")) return;
-    try {
-      const { error: menuErr } = await supabase.from('menu').insert(INITIAL_MENU.map(({id, ...rest}) => rest));
-      if (menuErr && menuErr.message.includes('row-level security')) {
-        setRlsErrorVisible(true);
-        return;
-      }
-      await supabase.from('settings').upsert({ id: 'branding', ...DEFAULT_BRANDING });
-      alert("¡Sincronización completa!"); 
-      fetchData();
-    } catch (e) { alert("Error de conexión con Supabase"); }
-  };
-
   useEffect(() => {
     fetchData();
     const menuSub = supabase.channel('menu-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData).subscribe();
@@ -144,7 +128,7 @@ const App: React.FC = () => {
     return () => { supabase.removeChannel(menuSub); supabase.removeChannel(ordersSub); supabase.removeChannel(settingsSub); };
   }, [isStaffMode]);
 
-  const addToCart = async (item: FoodItem) => {
+  const addToCart = (item: FoodItem) => {
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
@@ -187,23 +171,26 @@ const App: React.FC = () => {
   const filteredMenu = activeCategory === 'Todas' ? menuItems : menuItems.filter(i => i.category === activeCategory);
 
   const NavContent = () => (
-    <div className="flex flex-col h-full bg-[#0F0F0F]">
+    <div className="flex flex-col h-full bg-[#020617]">
       <div className="p-10 text-center">
-        <div className="w-28 h-28 bg-[#1A1A1A] rounded-full mx-auto flex items-center justify-center mb-5 shadow-2xl overflow-hidden border-4 border-orange-500/30 relative group">
-          {restaurantSettings.logoUrl ? (
-            <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-500" />
-          ) : (
-            <UtensilsCrossed className="w-12 h-12 text-orange-500" />
-          )}
-          <div className="absolute inset-0 bg-orange-500/5 animate-pulse pointer-events-none"></div>
+        <div className="w-24 h-24 bg-[#0F172A] rounded-full mx-auto flex items-center justify-center mb-5 shadow-2xl overflow-hidden border-4 border-orange-500/30 relative group">
+          <img 
+            src={restaurantSettings.logoUrl} 
+            className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-500" 
+            alt="Logo"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png';
+            }}
+          />
+          <div className="absolute inset-0 bg-orange-500/5 animate-pulse"></div>
         </div>
-        <h1 className="text-[14px] font-black uppercase tracking-[0.4em] text-white italic drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">{restaurantSettings.name}</h1>
+        <h1 className="text-[13px] font-black uppercase tracking-[0.4em] text-white italic drop-shadow-md">{restaurantSettings.name}</h1>
       </div>
       <nav className="flex-1 px-6 space-y-2 overflow-y-auto no-scrollbar">
         {isStaffMode ? (
           <>
             <SidebarItem icon={<ChefHat />} label="Pedidos" active={activeView === 'kitchen'} onClick={() => {setActiveView('kitchen'); setIsMobileMenuOpen(false);}} badge={orders.length} />
-            <SidebarItem icon={<Settings />} label="Administrar" active={activeView === 'admin'} onClick={() => {setActiveView('admin'); setIsMobileMenuOpen(false);}} />
+            <SidebarItem icon={<Settings />} label="Inventario" active={activeView === 'admin'} onClick={() => {setActiveView('admin'); setIsMobileMenuOpen(false);}} />
             <SidebarItem icon={<TrendingUp />} label="Estrategia IA" active={activeView === 'stats'} onClick={() => {setActiveView('stats'); setIsMobileMenuOpen(false);}} />
             <button onClick={() => {setIsStaffMode(false); setActiveView('menu'); setIsMobileMenuOpen(false);}} className="w-full mt-10 p-4 text-red-400 hover:bg-red-400/10 rounded-2xl flex items-center gap-3 font-black text-[10px] uppercase transition-all"><LogOut className="w-4 h-4" /> Salir</button>
           </>
@@ -211,8 +198,8 @@ const App: React.FC = () => {
           <>
             <SidebarItem icon={<LayoutGrid />} label="Todas" active={activeCategory === 'Todas'} onClick={() => {setActiveCategory('Todas'); setIsMobileMenuOpen(false);}} />
             {CATEGORIES.map(c => <SidebarItem key={c.id} icon={<span>{c.icon}</span>} label={c.id} active={activeCategory === c.id} onClick={() => {setActiveCategory(c.id); setIsMobileMenuOpen(false);}} />)}
-            <div className="pt-10 border-t border-white/5 mt-6">
-              <button onClick={() => {setShowLogin(true); setIsMobileMenuOpen(false);}} className="w-full p-5 bg-orange-600/10 text-orange-500 hover:bg-orange-600 hover:text-white rounded-[1.5rem] flex items-center gap-3 font-black text-[9px] uppercase tracking-widest transition-all border border-orange-500/20 shadow-lg shadow-orange-500/5"><Lock className="w-4 h-4" /> Acceso Staff</button>
+            <div className="pt-10 border-t border-white/10 mt-6">
+              <button onClick={() => {setShowLogin(true); setIsMobileMenuOpen(false);}} className="w-full p-5 bg-orange-600/10 text-orange-400 hover:bg-orange-600 hover:text-white rounded-[1.5rem] flex items-center gap-3 font-black text-[9px] uppercase tracking-widest transition-all border border-orange-500/20 shadow-lg shadow-orange-500/5"><Lock className="w-4 h-4" /> Acceso Staff</button>
             </div>
           </>
         )}
@@ -223,15 +210,15 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans bg-[#FAF9F6] text-slate-900">
       {/* Sidebar Desktop */}
-      <aside className="hidden md:flex flex-col bg-[#0F0F0F] text-white w-64 h-screen sticky top-0 border-r border-white/5 shrink-0 shadow-2xl">
+      <aside className="hidden md:flex flex-col bg-[#020617] text-white w-64 h-screen sticky top-0 border-r border-white/5 shrink-0">
         <NavContent />
       </aside>
 
       {/* Mobile Drawer Overlay */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-[100] md:hidden">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-          <div className="relative w-72 h-full bg-[#0F0F0F] text-white shadow-2xl animate-in slide-in-from-left duration-300">
+          <div className="absolute inset-0 bg-[#020617]/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
+          <div className="relative w-72 h-full bg-[#020617] text-white shadow-2xl animate-in slide-in-from-left duration-300">
             <button onClick={() => setIsMobileMenuOpen(false)} className="absolute top-6 right-6 p-2 bg-white/5 rounded-xl"><X className="w-5 h-5" /></button>
             <NavContent />
           </div>
@@ -243,18 +230,18 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-slate-100 rounded-xl active:scale-90 text-slate-900"><LayoutGrid className="w-6 h-6" /></button>
             <div className="flex items-center gap-3">
-                <img src={restaurantSettings.logoUrl || DEFAULT_BRANDING.logoUrl} className="w-10 h-10 rounded-full shadow-lg border-2 border-orange-500/20 md:hidden bg-slate-900" />
-                <div>
-                    <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic text-slate-900">
-                        {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Configuración Santa Parrilla' : 'Marketing IA') : restaurantSettings.name}
-                    </h2>
-                    {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">{activeCategory}</span>}
-                </div>
+              <img src={restaurantSettings.logoUrl} className="w-10 h-10 rounded-full shadow-lg border border-orange-500/20 md:hidden bg-[#020617]" />
+              <div>
+                  <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic text-slate-900">
+                      {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Gestión Santa Parrilla' : 'Marketing IA') : restaurantSettings.name}
+                  </h2>
+                  {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">{activeCategory}</span>}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {!isStaffMode && (
-              <button onClick={() => setIsCartOpen(true)} className="bg-[#0F0F0F] text-white px-5 py-3 rounded-2xl flex items-center gap-3 relative shadow-xl active:scale-95 transition-all">
+              <button onClick={() => setIsCartOpen(true)} className="bg-[#020617] text-white px-5 py-3 rounded-2xl flex items-center gap-3 relative shadow-xl active:scale-95 transition-all">
                 <ShoppingBag className="w-4 h-4 text-orange-500" />
                 <span className="font-black text-xs">${cartTotal.toFixed(2)}</span>
                 {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{cart.length}</span>}
@@ -268,9 +255,9 @@ const App: React.FC = () => {
             <div className="mb-8 bg-red-50 border-2 border-red-200 p-6 rounded-[2.5rem] flex items-start gap-5 animate-in slide-in-from-top-4">
               <div className="p-3 bg-red-600 rounded-2xl text-white shadow-lg"><AlertTriangle className="w-6 h-6" /></div>
               <div className="flex-1">
-                <h4 className="font-black uppercase italic text-red-900 text-sm">Error de Seguridad (Supabase)</h4>
+                <h4 className="font-black uppercase italic text-red-900 text-sm">Error de Permisos (Supabase RLS)</h4>
                 <p className="text-[10px] text-red-700 font-bold uppercase mt-1 leading-relaxed">
-                  Las políticas RLS bloquean el guardado. Habilita el acceso anónimo en el panel de Supabase.
+                  Las políticas de seguridad bloquean el guardado. Habilita el acceso anónimo en Supabase.
                 </p>
                 <button onClick={() => setRlsErrorVisible(false)} className="mt-4 text-[9px] font-black uppercase underline text-red-900">Ocultar</button>
               </div>
@@ -288,7 +275,7 @@ const App: React.FC = () => {
                   <div className="p-4 md:p-8 flex flex-col flex-1">
                     <h3 className="text-xs md:text-base font-black text-slate-900 line-clamp-1 mb-2 uppercase italic">{item.name}</h3>
                     <p className="text-[9px] md:text-[11px] text-slate-400 line-clamp-2 mb-6 leading-relaxed">{item.description}</p>
-                    <button onClick={() => addToCart(item)} className="mt-auto w-full py-3.5 bg-orange-50 hover:bg-[#0F0F0F] hover:text-white text-orange-600 transition-all rounded-[1.5rem] font-black text-[10px] uppercase border border-orange-100">Añadir al Pedido</button>
+                    <button onClick={() => addToCart(item)} className="mt-auto w-full py-3.5 bg-orange-50 hover:bg-[#020617] hover:text-white transition-all rounded-[1.5rem] font-black text-[10px] uppercase border border-orange-100 text-orange-700">Añadir</button>
                   </div>
                 </div>
               ))}
@@ -309,7 +296,7 @@ const App: React.FC = () => {
                         <div key={idx} className="flex items-center gap-3 text-[11px] font-black"><span className="bg-orange-600 text-white w-7 h-7 flex items-center justify-center rounded-xl text-[10px]">{item.quantity}</span><span className="uppercase text-slate-700 truncate">{item.name}</span></div>
                       ))}
                     </div>
-                    <div className="p-6 pt-0"><button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-lg ${order.status === 'READY' ? 'bg-emerald-600 text-white' : 'bg-[#0F0F0F] text-white'}`}>{order.status === 'PENDING' ? 'Empezar Cocina' : order.status === 'PREPARING' ? 'Terminado' : 'Entregado ✓'}</button></div>
+                    <div className="p-6 pt-0"><button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-lg ${order.status === 'READY' ? 'bg-emerald-600 text-white' : 'bg-[#020617] text-white'}`}>{order.status === 'PENDING' ? 'Empezar' : order.status === 'PREPARING' ? 'Terminar' : 'Entregado ✓'}</button></div>
                   </div>
                 ))
               )}
@@ -318,46 +305,51 @@ const App: React.FC = () => {
 
           {isStaffMode && activeView === 'admin' && (
             <div className="space-y-10 pb-20">
-                {/* IDENTIDAD VISUAL - AHORA CON SUBIDA DE ARCHIVO */}
                 <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border-2 border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-10">
                         <div className="flex items-center gap-6 text-slate-900">
                           <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                            <div className="w-24 h-24 bg-[#0F0F0F] rounded-full flex items-center justify-center text-white shadow-xl border-4 border-orange-500 overflow-hidden">
+                            <div className="w-24 h-24 bg-[#0F172A] rounded-full flex items-center justify-center text-white shadow-xl border-4 border-orange-500 overflow-hidden group-hover:border-orange-600 transition-colors">
                               {restaurantSettings.logoUrl ? (
-                                <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" />
+                                <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" alt="Logo actual" />
                               ) : (
                                 <Upload className="w-8 h-8 text-orange-500" />
                               )}
                             </div>
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                               <Camera className="w-6 h-6 text-white" />
                             </div>
-                            <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+                            <input 
+                              type="file" 
+                              ref={fileInputRef} 
+                              onChange={handleLogoUpload} 
+                              className="hidden" 
+                              accept="image/*"
+                            />
                           </div>
                           <div>
-                            <h4 className="text-xl font-black italic uppercase tracking-tighter leading-tight">Branding Santa Parrilla</h4>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sube tu logo y personaliza el nombre</p>
+                            <h4 className="text-xl font-black italic uppercase tracking-tighter leading-tight">Identidad Visual</h4>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Logo y Nombre del Local</p>
                           </div>
                         </div>
                         <button 
                           onClick={handleSaveBranding} 
                           disabled={isSavingBranding}
-                          className={`flex items-center justify-center gap-3 px-10 py-5 rounded-[1.5rem] font-black text-[11px] uppercase transition-all shadow-xl active:scale-95 ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-[#0F0F0F] text-white'}`}
+                          className={`flex items-center justify-center gap-3 px-10 py-5 rounded-[1.5rem] font-black text-[11px] uppercase transition-all shadow-xl active:scale-95 ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-[#020617] text-white'}`}
                         >
-                          {isSavingBranding ? 'Guardando...' : brandingSaved ? <><Check className="w-5 h-5" /> ¡Aplicado!</> : <><Save className="w-5 h-5" /> Guardar Cambios</>}
+                          {isSavingBranding ? 'Guardando...' : brandingSaved ? <><Check className="w-5 h-5" /> ¡Guardado!</> : <><Save className="w-5 h-5" /> Guardar Cambios</>}
                         </button>
                     </div>
                     <div className="grid grid-cols-1 gap-8">
                         <div className="space-y-3">
-                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre del Negocio</label>
-                          <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Ej: Santa Parrilla" />
+                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre Comercial</label>
+                          <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Nombre de tu negocio" />
                         </div>
-                        <div className="p-6 bg-[#0F0F0F] rounded-[2.5rem] border border-white/5 flex flex-col md:flex-row items-center gap-6">
-                           <div className="p-4 bg-orange-500/10 rounded-full"><Upload className="w-6 h-6 text-orange-500" /></div>
+                        <div className="p-6 bg-[#020617] rounded-[2rem] border border-orange-500/20 flex flex-col md:flex-row items-center gap-6">
+                           <div className="p-4 bg-orange-600/10 rounded-full"><Upload className="w-6 h-6 text-orange-400" /></div>
                            <div className="text-center md:text-left">
-                             <p className="text-[11px] font-black text-white uppercase tracking-[0.1em]">Haz clic en el círculo arriba para subir el logo que me enviaste.</p>
-                             <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Soporta archivos JPG, PNG y SVG.</p>
+                             <p className="text-[11px] font-black text-white uppercase tracking-widest">Haz clic en el logo arriba para subir el archivo que me pasaste.</p>
+                             <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 italic">Soporta PNG, JPG y SVG.</p>
                            </div>
                         </div>
                     </div>
@@ -366,7 +358,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center px-4 pt-10 border-t border-slate-200">
                   <div>
                     <h4 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">Menú <span className="text-orange-600 not-italic">Digital</span></h4>
-                    <p className="text-[9px] font-black text-slate-400 uppercase">Gestiona tus productos premium</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase">Gestiona tus platos y precios</p>
                   </div>
                   <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-orange-600 text-white px-8 py-5 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl shadow-orange-600/20 active:scale-95 transition-all flex items-center gap-2">
                     <PlusCircle className="w-4 h-4" /> Nuevo Plato
@@ -377,8 +369,8 @@ const App: React.FC = () => {
                   {menuItems.map(item => (
                     <div key={item.id} className="bg-white p-6 rounded-[2.5rem] border-2 border-slate-50 shadow-sm flex items-center gap-6 group hover:border-orange-100 transition-all">
                       <div className="relative">
-                        <img src={item.image} className="w-24 h-24 rounded-[2rem] object-cover shadow-lg border border-slate-100" />
-                        <div className="absolute -top-2 -right-2 bg-[#0F0F0F] text-orange-500 w-10 h-10 rounded-full flex items-center justify-center border-2 border-orange-500/30 shadow-md font-black text-[11px] italic">${item.price}</div>
+                        <img src={item.image} className="w-24 h-24 rounded-[2rem] object-cover shadow-lg" />
+                        <div className="absolute -top-2 -right-2 bg-white text-orange-600 w-8 h-8 rounded-full flex items-center justify-center border shadow-md font-black text-[10px] italic">${item.price}</div>
                       </div>
                       <div className="flex-1 text-slate-900">
                         <h5 className="font-black uppercase text-sm italic mb-1 line-clamp-1">{item.name}</h5>
@@ -397,8 +389,8 @@ const App: React.FC = () => {
             <div className="space-y-8">
                <div className="flex items-center gap-4 border-b pb-6"><div className="p-4 bg-orange-600 rounded-[2rem] text-white shadow-xl shadow-orange-600/30"><TrendingUp className="w-6 h-6" /></div><h3 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">Estrategia <span className="text-orange-600 not-italic">IA</span></h3></div>
                <div className="p-12 bg-white rounded-[3rem] border border-slate-100 text-center text-slate-400">
-                  <Sparkles className="w-12 h-12 mx-auto mb-4 text-orange-400 opacity-40" />
-                  <p className="font-black uppercase text-[10px] tracking-widest">Generando insights basados en ventas para Santa Parrilla...</p>
+                  <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p className="font-black uppercase text-[10px] tracking-widest">Generando insights basados en ventas...</p>
                </div>
             </div>
           )}
@@ -406,10 +398,10 @@ const App: React.FC = () => {
       </div>
 
       {showLogin && (
-        <div className="fixed inset-0 bg-[#0F0F0F]/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6 animate-in fade-in">
+        <div className="fixed inset-0 bg-[#020617]/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6 animate-in fade-in">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-12 text-center shadow-2xl animate-in zoom-in-95 text-slate-900">
-             <div className="w-20 h-20 bg-slate-100 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-[#0F0F0F] shadow-inner"><Lock className="w-10 h-10" /></div>
-             <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-4 text-[#0F0F0F]">Acceso <span className="text-orange-600 not-italic">Staff</span></h2>
+             <div className="w-20 h-20 bg-slate-100 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-[#020617] shadow-inner"><Lock className="w-10 h-10" /></div>
+             <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-4">Acceso <span className="text-orange-600 not-italic">Staff</span></h2>
              <input type="password" placeholder="PIN" maxLength={4} className="w-full py-6 bg-slate-50 rounded-[1.5rem] text-center text-4xl font-black tracking-[0.6em] outline-none border-2 border-transparent focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
              <button onClick={() => setShowLogin(false)} className="mt-10 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase tracking-widest">Cerrar</button>
           </div>
@@ -418,57 +410,22 @@ const App: React.FC = () => {
 
       {isCartOpen && (
         <div className="fixed inset-0 z-[200] flex justify-end">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
+          <div className="absolute inset-0 bg-[#020617]/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
-             <div className="p-8 border-b flex justify-between items-center pt-safe text-slate-900 bg-slate-50/50">
-               <h2 className="text-2xl font-black italic uppercase tracking-tighter">Mi <span className="text-orange-600 not-italic">Pedido</span></h2>
-               <button onClick={() => setIsCartOpen(false)} className="p-3 bg-white rounded-2xl border border-slate-100 shadow-sm active:scale-90"><X className="w-6 h-6" /></button>
-             </div>
+             <div className="p-8 border-b flex justify-between items-center pt-safe text-slate-900"><h2 className="text-2xl font-black italic uppercase tracking-tighter">Mi <span className="text-orange-600 not-italic">Orden</span></h2><button onClick={() => setIsCartOpen(false)} className="p-3 bg-slate-100 rounded-2xl"><X className="w-6 h-6" /></button></div>
              <div className="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar">
-                {cart.length === 0 ? (
-                  <div className="py-24 text-center opacity-10">
-                    <ShoppingBasket className="w-24 h-24 mx-auto mb-6 text-[#0F0F0F]" />
-                    <p className="font-black uppercase text-[10px] tracking-widest">Tu carrito está vacío</p>
-                  </div>
-                ) : cart.map(item => (
-                  <div key={item.id} className="flex items-center gap-5 bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 group">
-                    <img src={item.image} className="w-16 h-16 rounded-2xl object-cover shadow-md border border-white" />
-                    <div className="flex-1">
-                      <p className="text-[11px] font-black uppercase italic text-slate-800 truncate">{item.name}</p>
-                      <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl w-fit mt-2 border border-slate-100 text-slate-900 shadow-sm">
-                        <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0))} className="text-orange-500"><Minus className="w-3 h-3" /></button>
-                        <span className="text-[10px] font-black w-4 text-center">{item.quantity}</span>
-                        <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="text-orange-500"><Plus className="w-3 h-3" /></button>
-                      </div>
-                    </div>
+                {cart.length === 0 ? <div className="py-24 text-center opacity-10"><ShoppingBasket className="w-24 h-24 mx-auto mb-6 text-slate-900" /><p className="font-black uppercase text-[10px] tracking-widest">Carrito vacío</p></div> : cart.map(item => (
+                  <div key={item.id} className="flex items-center gap-5 bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100">
+                    <img src={item.image} className="w-16 h-16 rounded-2xl object-cover shadow-md" />
+                    <div className="flex-1"><p className="text-[11px] font-black uppercase italic text-slate-800 truncate">{item.name}</p><div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl w-fit mt-2 border border-slate-100 text-slate-900 shadow-sm"><button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0))}><Minus className="w-3 h-3" /></button><span className="text-[10px] font-black w-4 text-center">{item.quantity}</span><button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))}><Plus className="w-3 h-3" /></button></div></div>
                     <span className="text-sm font-black text-orange-600 italic">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
-                {cart.length > 0 && (
-                  <div className="pt-6 space-y-4 animate-in slide-in-from-bottom-4">
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre para el Pedido</label>
-                      <input type="text" placeholder="Ej: Juan Pérez" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border-2 border-transparent focus:border-orange-500 text-slate-900 shadow-inner" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Mesa o Dirección</label>
-                      <input type="text" placeholder="Ej: Mesa 5 / Domicilio" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border-2 border-transparent focus:border-orange-500 text-slate-900 shadow-inner" />
-                    </div>
-                  </div>
-                )}
+                {cart.length > 0 && <div className="pt-6 space-y-4"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 text-slate-900 shadow-inner" /><input type="text" placeholder="Mesa / Llevar" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 text-slate-900 shadow-inner" /></div>}
              </div>
-             <div className="p-10 border-t bg-white pb-safe shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
-                <div className="flex justify-between items-end mb-8 text-slate-900">
-                  <span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Total Pedido</span>
-                  <span className="text-5xl font-black tracking-tighter italic leading-none text-[#0F0F0F]">${cartTotal.toFixed(2)}</span>
-                </div>
-                <button 
-                  onClick={handlePayment} 
-                  disabled={cart.length === 0 || isPaying || !customerName} 
-                  className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-2xl active:scale-95 transition-all ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-[#0F0F0F] text-white disabled:opacity-20 disabled:grayscale'}`}
-                >
-                  {isPaying ? 'Confirmando...' : paymentSuccess ? '¡Pedido Recibido!' : 'Confirmar Pedido'}
-                </button>
+             <div className="p-10 border-t bg-white pb-safe">
+                <div className="flex justify-between items-end mb-8 text-slate-900"><span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Subtotal</span><span className="text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span></div>
+                <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl active:scale-95 transition-all ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-[#020617] text-white disabled:opacity-20'}`}>{isPaying ? 'Procesando...' : paymentSuccess ? '¡Enviado!' : 'Hacer Pedido'}</button>
              </div>
           </div>
         </div>
@@ -497,7 +454,7 @@ const App: React.FC = () => {
               setIsAdminFormOpen(false);
               fetchData();
             } catch (err: any) {
-              console.warn("Error Supabase, guardando local:", err.message);
+              console.warn("Respaldo local:", err.message);
               setMenuItems(prev => {
                 if (itemData.id) return prev.map(i => i.id === itemData.id ? itemData : i);
                 return [...prev, { ...itemData, id: 'local_' + Date.now() }];
@@ -514,7 +471,7 @@ const App: React.FC = () => {
 
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
   <button onClick={onClick} className={`relative w-full p-4 flex items-center gap-4 rounded-[1.5rem] transition-all duration-300 group ${active ? 'bg-orange-600 text-white shadow-xl shadow-orange-600/30' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`}>
-    <div className={`transition-transform duration-300 ${active ? 'scale-110 rotate-3 text-white' : 'group-hover:scale-110 text-orange-500'}`}>{icon}</div>
+    <div className={`transition-transform duration-300 ${active ? 'scale-110 rotate-3' : 'group-hover:scale-110'}`}>{icon}</div>
     <span className="text-[10px] font-black uppercase tracking-widest text-left truncate">{label}</span>
     {badge > 0 && <span className="absolute top-2 right-2 bg-white text-orange-600 text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-lg shadow-lg border border-orange-100">{badge}</span>}
   </button>
@@ -525,30 +482,30 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleAIDescription = async () => {
-    if (!data.name) return alert("Ingresa el nombre del plato");
+    if (!data.name) return alert("Nombre requerido");
     setIsGenerating(true);
     try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); }
   };
 
   const handleAIImage = async () => {
-    if (!data.name) return alert("Ingresa el nombre del plato");
+    if (!data.name) return alert("Nombre requerido");
     setIsGenerating(true);
     try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); }
   };
 
   return (
-    <div className="fixed inset-0 bg-[#0F0F0F]/95 backdrop-blur-2xl z-[300] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in">
+    <div className="fixed inset-0 bg-[#020617]/95 backdrop-blur-2xl z-[300] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in">
       <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-10 md:p-14 shadow-2xl animate-in slide-in-from-bottom-10 text-slate-900">
         <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-10">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2>
         <div className="space-y-5">
-            <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre del Plato</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" placeholder="Ej: Burger Santa Parrilla" /></div>
+            <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" placeholder="Ej: Super Burger" /></div>
             <div className="flex gap-5">
-              <div className="w-1/2 space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio ($)</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" /></div>
+              <div className="w-1/2 space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" /></div>
               <div className="w-1/2 space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-[10px] outline-none border border-slate-100 uppercase appearance-none"><option value="Hamburguesas">Hamburguesas</option><option value="Carnes">Carnes</option><option value="Papas Fritas">Papas Fritas</option><option value="Bebidas">Bebidas</option><option value="Postres">Postres</option></select></div>
             </div>
-            <div className="space-y-2"><div className="flex justify-between items-center px-4"><label className="text-[9px] font-black text-slate-400 uppercase">URL de Imagen</label><button onClick={handleAIImage} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1 hover:opacity-70 transition-opacity"><ImageIcon className="w-3 h-3" /> IA Foto</button></div><input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" placeholder="https://..." /></div>
-            <div className="space-y-2"><div className="flex justify-between items-center px-4"><label className="text-[9px] font-black text-slate-400 uppercase">Descripción Gourmet</label><button onClick={handleAIDescription} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1 hover:opacity-70 transition-opacity"><Wand2 className="w-3 h-3" /> IA Texto</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner resize-none" placeholder="Ingredientes seleccionados..." /></div>
-            <div className="pt-8 space-y-4"><button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar Producto</button><button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Cancelar</button></div>
+            <div className="space-y-2"><div className="flex justify-between items-center px-4"><label className="text-[9px] font-black text-slate-400 uppercase">Imagen</label><button onClick={handleAIImage} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1 hover:opacity-70 transition-opacity"><ImageIcon className="w-3 h-3" /> IA Foto</button></div><input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" placeholder="URL de la imagen" /></div>
+            <div className="space-y-2"><div className="flex justify-between items-center px-4"><label className="text-[9px] font-black text-slate-400 uppercase">Descripción</label><button onClick={handleAIDescription} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1 hover:opacity-70 transition-opacity"><Wand2 className="w-3 h-3" /> IA Texto</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner resize-none" placeholder="Ingredientes del plato..." /></div>
+            <div className="pt-8 space-y-4"><button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar Datos</button><button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Cancelar</button></div>
         </div>
       </div>
     </div>
