@@ -50,7 +50,6 @@ const App: React.FC = () => {
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [restaurantSettings, setRestaurantSettings] = useState(DEFAULT_BRANDING);
-  const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
   const [isUsingCloudData, setIsUsingCloudData] = useState(false);
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
@@ -64,8 +63,6 @@ const App: React.FC = () => {
       if (!menuError && menuData && menuData.length > 0) {
         setMenuItems(menuData);
         setIsUsingCloudData(true);
-      } else {
-        setIsUsingCloudData(false);
       }
 
       const { data: ordersData, error: ordersError } = await supabase
@@ -80,7 +77,12 @@ const App: React.FC = () => {
       }
 
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
-      if (settingsData) setRestaurantSettings({ name: settingsData.name, logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl });
+      if (settingsData) {
+        setRestaurantSettings({ 
+          name: settingsData.name, 
+          logoUrl: DEFAULT_BRANDING.logoUrl // El logo siempre es el oficial
+        });
+      }
     } catch (err) {
       console.error("Fetch error:", err);
     }
@@ -89,7 +91,11 @@ const App: React.FC = () => {
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
-      const { error } = await supabase.from('settings').upsert({ id: 'branding', ...restaurantSettings });
+      const { error } = await supabase.from('settings').upsert({ 
+        id: 'branding', 
+        name: restaurantSettings.name,
+        logoUrl: DEFAULT_BRANDING.logoUrl // Aseguramos que el logo no cambie en DB
+      });
       if (error) {
         if (error.message.includes('row-level security')) setRlsErrorVisible(true);
         throw error;
@@ -171,10 +177,11 @@ const App: React.FC = () => {
   const NavContent = () => (
     <div className="flex flex-col h-full">
       <div className="p-10 text-center">
-        <div className="w-20 h-20 bg-orange-600 rounded-full mx-auto flex items-center justify-center mb-4 shadow-2xl overflow-hidden border-4 border-white/20 animate-pulse">
-          {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover scale-110" /> : <UtensilsCrossed className="w-10 h-10 text-white" />}
+        <div className="w-24 h-24 bg-orange-600 rounded-full mx-auto flex items-center justify-center mb-5 shadow-2xl overflow-hidden border-4 border-white/20 relative group">
+          <img src={DEFAULT_BRANDING.logoUrl} className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-500" />
+          <div className="absolute inset-0 bg-orange-500/10 animate-pulse"></div>
         </div>
-        <h1 className="text-[12px] font-black uppercase tracking-[0.3em] opacity-90 truncate text-white italic">{restaurantSettings.name}</h1>
+        <h1 className="text-[13px] font-black uppercase tracking-[0.4em] text-white italic drop-shadow-md">{restaurantSettings.name}</h1>
       </div>
       <nav className="flex-1 px-6 space-y-2 overflow-y-auto no-scrollbar">
         {isStaffMode ? (
@@ -220,7 +227,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-slate-100 rounded-xl active:scale-90 text-slate-900"><LayoutGrid className="w-6 h-6" /></button>
             <div className="flex items-center gap-3">
-                <img src={restaurantSettings.logoUrl} className="w-8 h-8 rounded-full shadow-sm md:hidden" />
+                <img src={DEFAULT_BRANDING.logoUrl} className="w-10 h-10 rounded-full shadow-lg border border-slate-100 md:hidden" />
                 <div>
                     <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic text-slate-900">
                         {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Gestión Santa Parrilla' : 'Marketing IA') : restaurantSettings.name}
@@ -247,9 +254,9 @@ const App: React.FC = () => {
               <div className="flex-1">
                 <h4 className="font-black uppercase italic text-red-900 text-sm">Error de Permisos (Supabase RLS)</h4>
                 <p className="text-[10px] text-red-700 font-bold uppercase mt-1 leading-relaxed">
-                  Debes habilitar las políticas de acceso en tu panel de Supabase. Ejecuta el código SQL proporcionado en el editor de Supabase para activar el guardado.
+                  Debes habilitar las políticas de acceso en tu panel de Supabase para guardar cambios.
                 </p>
-                <button onClick={() => setRlsErrorVisible(false)} className="mt-4 text-[9px] font-black uppercase underline text-red-900">Entendido, ocultar</button>
+                <button onClick={() => setRlsErrorVisible(false)} className="mt-4 text-[9px] font-black uppercase underline text-red-900">Entendido</button>
               </div>
             </div>
           )}
@@ -295,16 +302,16 @@ const App: React.FC = () => {
 
           {isStaffMode && activeView === 'admin' && (
             <div className="space-y-10 pb-20">
-                {/* SECCIÓN DE BRANDING - SIMPLIFICADA */}
+                {/* IDENTIDAD VISUAL FIJA */}
                 <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border-2 border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
                         <div className="flex items-center gap-4 text-slate-900">
-                          <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center text-white shadow-xl shadow-orange-600/20 border-2 border-white/20">
-                            <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover scale-110" />
+                          <div className="w-20 h-20 bg-orange-600 rounded-full flex items-center justify-center text-white shadow-xl shadow-orange-600/20 border-2 border-white/20 overflow-hidden">
+                            <img src={DEFAULT_BRANDING.logoUrl} className="w-full h-full object-cover scale-110" />
                           </div>
                           <div>
-                            <h4 className="text-xl font-black italic uppercase tracking-tighter leading-tight">Identidad Visual</h4>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nombre del Local Oficial</p>
+                            <h4 className="text-xl font-black italic uppercase tracking-tighter leading-tight">Santa Parrilla</h4>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Identidad Visual Corporativa</p>
                           </div>
                         </div>
                         <button 
@@ -312,16 +319,17 @@ const App: React.FC = () => {
                           disabled={isSavingBranding}
                           className={`flex items-center justify-center gap-3 px-10 py-5 rounded-[1.5rem] font-black text-[11px] uppercase transition-all shadow-xl active:scale-95 ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white'}`}
                         >
-                          {isSavingBranding ? 'Guardando...' : brandingSaved ? <><Check className="w-5 h-5" /> ¡Guardado!</> : <><Save className="w-5 h-5" /> Guardar Cambios</>}
+                          {isSavingBranding ? 'Guardando...' : brandingSaved ? <><Check className="w-5 h-5" /> ¡Guardado!</> : <><Save className="w-5 h-5" /> Guardar Nombre</>}
                         </button>
                     </div>
                     <div className="grid grid-cols-1 gap-8">
                         <div className="space-y-3">
-                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre Comercial</label>
+                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre Comercial del Local</label>
                           <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Nombre de tu negocio" />
                         </div>
-                        <div className="p-6 bg-slate-100 rounded-[2rem] border border-slate-200">
-                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">El logo oficial de Santa Parrilla ha sido establecido correctamente.</p>
+                        <div className="p-6 bg-slate-900 rounded-[2rem] border border-white/5 flex items-center gap-4">
+                           <div className="p-2 bg-emerald-500/20 rounded-full"><Check className="w-4 h-4 text-emerald-400" /></div>
+                           <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">El logotipo oficial ha sido establecido de forma permanente.</p>
                         </div>
                     </div>
                 </div>
@@ -353,17 +361,6 @@ const App: React.FC = () => {
                     </div>
                   ))}
                 </div>
-
-                {!isUsingCloudData && (
-                  <div className="p-12 bg-amber-50 rounded-[4rem] border-2 border-dashed border-amber-200 text-center animate-pulse">
-                    <div className="p-4 bg-amber-200/30 w-fit mx-auto rounded-full mb-6">
-                      <CloudOff className="w-10 h-10 text-amber-600" />
-                    </div>
-                    <h5 className="font-black uppercase text-amber-900 italic text-lg mb-2 tracking-tighter">Sin Datos en la Nube</h5>
-                    <p className="text-[10px] font-black text-amber-700 uppercase mb-8 tracking-widest">¿Quieres cargar el menú de ejemplo para empezar?</p>
-                    <button onClick={seedDatabase} className="bg-amber-600 text-white px-12 py-5 rounded-[2rem] font-black uppercase text-[10px] shadow-xl active:scale-95 transition-all">Sincronizar Supabase</button>
-                  </div>
-                )}
             </div>
           )}
 
