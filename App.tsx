@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   UtensilsCrossed, Timer, ShoppingBasket, Edit2, Lock, LogOut, 
-  Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2
+  Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2, Database, AlertTriangle
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType } from './types';
@@ -50,6 +50,7 @@ const App: React.FC = () => {
   const [upsellHint, setUpsellHint] = useState<string | null>(null);
   const [clickCount, setClickCount] = useState(0);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [isDbEmpty, setIsDbEmpty] = useState(false);
 
   const prevOrdersCount = useRef(0);
 
@@ -58,24 +59,29 @@ const App: React.FC = () => {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
+      oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
       oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // La
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
       oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
       gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.5);
-    } catch (e) { console.error("Sound failed", e); }
+      oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {}
   };
 
   const fetchData = async () => {
     try {
+      // 1. Fetch Menu
       const { data: menuData } = await supabase.from('menu').select('*');
-      if (menuData && menuData.length > 0) setMenuItems(menuData);
-      else setMenuItems(INITIAL_MENU);
+      if (menuData && menuData.length > 0) {
+        setMenuItems(menuData);
+        setIsDbEmpty(false);
+      } else {
+        setIsDbEmpty(true);
+        setMenuItems([]);
+      }
 
+      // 2. Fetch Active Orders
       const { data: ordersData } = await supabase
         .from('orders')
         .select('*')
@@ -83,13 +89,9 @@ const App: React.FC = () => {
         .order('createdAt', { ascending: false });
       
       if (ordersData) {
-        if (ordersData.length > prevOrdersCount.current && isStaffMode) {
-          playNotificationSound();
-        }
+        if (ordersData.length > prevOrdersCount.current && isStaffMode) playNotificationSound();
         prevOrdersCount.current = ordersData.length;
         setOrders(ordersData);
-        
-        // Tracking para el cliente
         const myOrderId = localStorage.getItem('last_order_id');
         if (myOrderId) {
           const myOrder = ordersData.find(o => o.id === myOrderId);
@@ -97,9 +99,24 @@ const App: React.FC = () => {
         }
       }
 
+      // 3. Fetch Branding
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
       if (settingsData) setRestaurantSettings(settingsData);
-    } catch (err) { console.error("Sync error:", err); }
+    } catch (err) { console.error("Database connection failed", err); }
+  };
+
+  const seedDatabase = async () => {
+    if (!confirm("¿Deseas cargar el menú inicial de Santa Parrilla en tu base de datos?")) return;
+    try {
+      const { error: menuErr } = await supabase.from('menu').insert(INITIAL_MENU.map(({id, ...rest}) => rest));
+      const { error: setErr } = await supabase.from('settings').upsert({ id: 'branding', ...DEFAULT_BRANDING });
+      if (!menuErr && !setErr) {
+        alert("¡Base de datos inicializada con éxito!");
+        fetchData();
+      } else {
+        alert("Error al inicializar: " + (menuErr?.message || setErr?.message));
+      }
+    } catch (e) { alert("Error crítico de red"); }
   };
 
   useEffect(() => {
@@ -140,7 +157,6 @@ const App: React.FC = () => {
       status: OrderStatus.PENDING,
       customerName,
       tableNumber: tableNumber || 'Llevar',
-      createdAt: new Date().toISOString()
     };
     const { data, error } = await supabase.from('orders').insert([newOrder]).select().single();
     if (!error && data) {
@@ -148,7 +164,7 @@ const App: React.FC = () => {
       setCart([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
-    } else { alert("Error: " + error?.message); }
+    } else { alert("Error en Supabase: " + error?.message); }
     setIsPaying(false);
   };
 
@@ -175,21 +191,21 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col md:flex-row font-sans">
       <aside className="hidden md:flex flex-col bg-slate-950 text-white w-64 h-screen sticky top-0 border-r border-white/5 shrink-0 overflow-y-auto no-scrollbar">
         <div className="p-10 text-center">
-          <div onClick={() => setClickCount(c => c + 1)} className="w-20 h-20 bg-orange-600 rounded-[2rem] mx-auto flex items-center justify-center mb-4 shadow-2xl cursor-default transition-all active:scale-95">
-            {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover rounded-[2rem]" /> : <UtensilsCrossed className="w-10 h-10" />}
+          <div onClick={() => setClickCount(c => c + 1)} className="w-20 h-20 bg-orange-600 rounded-[2rem] mx-auto flex items-center justify-center mb-4 shadow-2xl cursor-default transition-all active:scale-95 overflow-hidden">
+            {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <UtensilsCrossed className="w-10 h-10" />}
           </div>
           <h1 className="text-xs font-black uppercase tracking-widest opacity-90 truncate">{restaurantSettings.name}</h1>
           <div className="mt-2 flex items-center justify-center gap-2">
              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-             <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Live Sync</span>
+             <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Supabase Link</span>
           </div>
         </div>
         <nav className="flex-1 px-6 space-y-3">
           {isStaffMode ? (
             <>
-              <SidebarItem icon={<ChefHat />} label="Cocina" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} badge={orders.length} />
-              <SidebarItem icon={<Settings />} label="Menú" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
-              <SidebarItem icon={<TrendingUp />} label="IA Insights" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
+              <SidebarItem icon={<ChefHat />} label="Comandas" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} badge={orders.length} />
+              <SidebarItem icon={<Settings />} label="Inventario" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
+              <SidebarItem icon={<TrendingUp />} label="Estrategia IA" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
               <button onClick={() => setIsStaffMode(false)} className="w-full mt-10 p-4 text-red-400 hover:bg-red-400/10 rounded-2xl flex items-center gap-3 font-black text-[10px] uppercase transition-all"><LogOut className="w-4 h-4" /> Salir</button>
             </>
           ) : (
@@ -207,7 +223,7 @@ const App: React.FC = () => {
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-slate-100 rounded-xl active:scale-90"><LayoutGrid className="w-6 h-6" /></button>
             <div onClick={() => { if(clickCount + 1 >= 5) { setShowLogin(true); setClickCount(0); } else setClickCount(c => c+1); }}>
                 <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Inventario' : 'Reporte IA') : restaurantSettings.name}
+                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina Real' : activeView === 'admin' ? 'Gestión Menú' : 'Reporte Estratégico') : restaurantSettings.name}
                 </h2>
                 {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">{activeCategory}</span>}
             </div>
@@ -224,22 +240,23 @@ const App: React.FC = () => {
         </header>
 
         <main className="flex-1 p-4 md:p-10 max-w-6xl mx-auto w-full pb-32">
-          {activeView === 'menu' && !isStaffMode && (
+          {isDbEmpty && !isStaffMode && (
+            <div className="py-40 text-center space-y-6">
+                <Database className="w-16 h-16 mx-auto text-slate-300 animate-bounce" />
+                <h3 className="text-xl font-black uppercase italic">Configurando restaurante...</h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Espera un momento o contacta a soporte</p>
+            </div>
+          )}
+
+          {activeView === 'menu' && !isStaffMode && !isDbEmpty && (
             <>
               {lastOrder && (
-                <div className="mb-6 bg-slate-900 text-white p-6 rounded-[2.5rem] shadow-2xl flex items-center justify-between border-4 border-orange-600 animate-pulse">
+                <div className="mb-6 bg-slate-900 text-white p-6 rounded-[2.5rem] shadow-2xl flex items-center justify-between border-4 border-orange-600 animate-in slide-in-from-top-10">
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-400">Estado de tu pedido</p>
-                    <h4 className="text-lg font-black uppercase italic">{lastOrder.status === 'PENDING' ? 'En Cola' : lastOrder.status === 'PREPARING' ? 'Cocinando...' : '¡Listo para retirar!'}</h4>
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-400">Tu Pedido está</p>
+                    <h4 className="text-lg font-black uppercase italic">{lastOrder.status === 'PENDING' ? 'En Espera' : lastOrder.status === 'PREPARING' ? 'En la Parrilla 🔥' : '¡Listo para retirar! 🥡'}</h4>
                   </div>
-                  <Bell className="w-8 h-8 text-orange-500" />
-                </div>
-              )}
-              {upsellHint && (
-                <div className="mb-6 bg-orange-600 text-white p-5 rounded-[2rem] shadow-xl flex items-center gap-4 animate-in slide-in-from-top-4">
-                  <Sparkles className="w-5 h-5" />
-                  <p className="text-[11px] font-bold italic">"{upsellHint}"</p>
-                  <button onClick={() => setUpsellHint(null)} className="ml-auto"><X className="w-4 h-4 opacity-50" /></button>
+                  <Bell className="w-8 h-8 text-orange-500 animate-swing" />
                 </div>
               )}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
@@ -260,10 +277,21 @@ const App: React.FC = () => {
             </>
           )}
 
-          {isStaffMode && activeView === 'kitchen' && (
+          {isStaffMode && isDbEmpty && (
+             <div className="bg-orange-50 border-2 border-orange-100 p-10 rounded-[3rem] text-center space-y-8 animate-in zoom-in-95">
+                <AlertTriangle className="w-16 h-16 text-orange-500 mx-auto" />
+                <div>
+                    <h3 className="text-2xl font-black uppercase italic">Base de datos vacía</h3>
+                    <p className="text-xs font-bold text-slate-500 mt-2">No se encontraron platos en Supabase. ¿Deseas cargar el menú por defecto?</p>
+                </div>
+                <button onClick={seedDatabase} className="bg-orange-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-orange-600/30 active:scale-95 transition-all">Inicializar Santa Parrilla</button>
+             </div>
+          )}
+
+          {isStaffMode && activeView === 'kitchen' && !isDbEmpty && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {orders.length === 0 ? (
-                <div className="col-span-full py-40 text-center opacity-20"><p className="font-black uppercase text-xs tracking-[0.4em]">Sin comandas</p></div>
+                <div className="col-span-full py-40 text-center opacity-20"><p className="font-black uppercase text-xs tracking-[0.4em]">Sin pedidos pendientes</p></div>
               ) : (
                 orders.map(order => (
                   <div key={order.id} className="bg-white border-2 border-slate-100 rounded-[3rem] shadow-xl overflow-hidden flex flex-col animate-in zoom-in-95">
@@ -278,7 +306,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="p-6 pt-0">
                       <button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${order.status === 'READY' ? 'bg-emerald-600 text-white' : 'bg-slate-950 text-white'}`}>
-                        {order.status === 'PENDING' ? 'Iniciar Cocina' : order.status === 'PREPARING' ? 'Marcar Listo' : 'Entregado ✓'}
+                        {order.status === 'PENDING' ? 'A Preparación' : order.status === 'PREPARING' ? '¡Listo para entrega!' : 'Marcar Entregado ✓'}
                       </button>
                     </div>
                   </div>
@@ -287,7 +315,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {isStaffMode && activeView === 'stats' && (
+          {isStaffMode && activeView === 'stats' && !isDbEmpty && (
             <div className="space-y-8">
                <div className="flex items-center gap-4 border-b pb-6">
                   <div className="p-4 bg-orange-600 rounded-[2rem] text-white shadow-xl shadow-orange-600/30"><TrendingUp className="w-6 h-6" /></div>
@@ -300,7 +328,7 @@ const App: React.FC = () => {
                         <h4 className="text-sm font-black uppercase italic mb-3 text-slate-800 tracking-tight group-hover:text-orange-600 transition-colors">{s.title}</h4>
                         <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{s.description}</p>
                     </div>
-                  )) : <div className="col-span-full py-20 text-center animate-pulse"><p className="font-black text-[10px] text-slate-400 uppercase">Consultando a la IA...</p></div>}
+                  )) : <div className="col-span-full py-20 text-center animate-pulse"><p className="font-black text-[10px] text-slate-400 uppercase">Consultando a la IA sobre tus ventas...</p></div>}
                </div>
             </div>
           )}
@@ -308,13 +336,13 @@ const App: React.FC = () => {
           {isStaffMode && activeView === 'admin' && (
             <div className="space-y-10 pb-20">
                 <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-xl">
-                    <div className="flex items-center gap-3 mb-8"><Store className="w-6 h-6 text-orange-600" /><h4 className="text-xl font-black italic uppercase tracking-tighter">Branding</h4></div>
+                    <div className="flex items-center gap-3 mb-8"><Store className="w-6 h-6 text-orange-600" /><h4 className="text-xl font-black italic uppercase tracking-tighter">Branding de tu local</h4></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre</label><input type="text" value={restaurantSettings.name} onChange={e => saveBranding(e.target.value, restaurantSettings.logoUrl)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
+                        <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre Comercial</label><input type="text" value={restaurantSettings.name} onChange={e => saveBranding(e.target.value, restaurantSettings.logoUrl)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
                         <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Logo URL</label><input type="text" value={restaurantSettings.logoUrl} onChange={e => saveBranding(restaurantSettings.name, e.target.value)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
                     </div>
                 </div>
-                <div className="flex justify-between items-center px-4"><h4 className="text-xl font-black italic uppercase tracking-tighter">Mi <span className="text-orange-600 not-italic">Menú</span></h4><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-950 text-white px-8 py-4 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">Nuevo Plato</button></div>
+                <div className="flex justify-between items-center px-4"><h4 className="text-xl font-black italic uppercase tracking-tighter">Catálogo de <span className="text-orange-600 not-italic">Platos</span></h4><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-950 text-white px-8 py-4 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">Añadir Plato</button></div>
                 <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-2xl overflow-hidden">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b"><tr><th className="p-8">Plato</th><th className="p-8">Precio</th><th className="p-8 text-right">Acción</th></tr></thead>
@@ -336,9 +364,9 @@ const App: React.FC = () => {
 
       {isStaffMode && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 shadow-2xl">
-          <MobileNavItem icon={<ChefHat />} label="Cocina" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} />
-          <MobileNavItem icon={<TrendingUp />} label="IA" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
-          <MobileNavItem icon={<Settings />} label="Menú" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
+          <MobileNavItem icon={<ChefHat />} label="Pedidos" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} />
+          <MobileNavItem icon={<TrendingUp />} label="Estrategia" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
+          <MobileNavItem icon={<Settings />} label="Cartas" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
         </nav>
       )}
 
@@ -346,9 +374,9 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6 animate-in fade-in">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-12 text-center shadow-2xl animate-in zoom-in-95">
              <div className="w-20 h-20 bg-slate-100 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-slate-950 shadow-inner"><Lock className="w-10 h-10" /></div>
-             <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-4">Acceso <span className="text-orange-600 not-italic">Staff</span></h2>
+             <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-4">Panel <span className="text-orange-600 not-italic">Staff</span></h2>
              <input type="password" placeholder="PIN" maxLength={4} className="w-full py-6 bg-slate-50 rounded-[1.5rem] text-center text-4xl font-black tracking-[0.6em] outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
-             <button onClick={() => setShowLogin(false)} className="mt-10 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase tracking-widest transition-colors">Cerrar</button>
+             <button onClick={() => setShowLogin(false)} className="mt-10 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase tracking-widest transition-colors">Volver al menú</button>
           </div>
         </div>
       )}
@@ -357,9 +385,9 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[200] flex justify-end">
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
-             <div className="p-8 border-b flex justify-between items-center pt-safe"><h2 className="text-2xl font-black italic uppercase tracking-tighter">Mi <span className="text-orange-600 not-italic">Bolsa</span></h2><button onClick={() => setIsCartOpen(false)} className="p-3 bg-slate-100 rounded-2xl"><X className="w-6 h-6" /></button></div>
+             <div className="p-8 border-b flex justify-between items-center pt-safe"><h2 className="text-2xl font-black italic uppercase tracking-tighter">Mi <span className="text-orange-600 not-italic">Orden</span></h2><button onClick={() => setIsCartOpen(false)} className="p-3 bg-slate-100 rounded-2xl"><X className="w-6 h-6" /></button></div>
              <div className="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar">
-                {cart.length === 0 ? <div className="py-24 text-center opacity-10"><ShoppingBasket className="w-24 h-24 mx-auto mb-6" /><p className="font-black uppercase text-[10px] tracking-widest">Tu bolsa está vacía</p></div> : (
+                {cart.length === 0 ? <div className="py-24 text-center opacity-10"><ShoppingBasket className="w-24 h-24 mx-auto mb-6" /><p className="font-black uppercase text-[10px] tracking-widest">Carrito vacío</p></div> : (
                   <>
                     {cart.map(item => (
                       <div key={item.id} className="flex items-center gap-5 bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100">
@@ -375,15 +403,15 @@ const App: React.FC = () => {
                       </div>
                     ))}
                     <div className="pt-6 space-y-4">
-                        <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
-                        <input type="text" placeholder="Mesa" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
+                        <input type="text" placeholder="Tu Nombre para el pedido" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
+                        <input type="text" placeholder="Número de Mesa / Llevar" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
                     </div>
                   </>
                 )}
              </div>
              <div className="p-10 border-t bg-white pb-safe">
-                <div className="flex justify-between items-end mb-8"><span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Subtotal</span><span className="text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span></div>
-                <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}>{isPaying ? 'Enviando...' : paymentSuccess ? '¡Confirmado!' : 'Pedir Ahora'}</button>
+                <div className="flex justify-between items-end mb-8"><span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Total</span><span className="text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span></div>
+                <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}>{isPaying ? 'Enviando...' : paymentSuccess ? '¡Pedido Enviado!' : 'Confirmar Pedido'}</button>
              </div>
           </div>
         </div>
@@ -442,7 +470,7 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
   return (
     <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl z-[300] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in">
       <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-10 md:p-14 shadow-2xl animate-in slide-in-from-bottom-10">
-        <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-10 text-slate-950">{item ? 'Actualizar' : 'Añadir'} <span className="text-orange-600 not-italic">Plato</span></h2>
+        <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-10 text-slate-950">{item ? 'Modificar' : 'Crear'} <span className="text-orange-600 not-italic">Plato</span></h2>
         <div className="space-y-5">
             <div className="space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre del Plato</label>
@@ -464,24 +492,23 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
                 <div className="flex justify-between items-center px-4">
                     <label className="text-[9px] font-black text-slate-400 uppercase">Foto del Plato</label>
                     <button onClick={handleAIImage} disabled={isGenerating} className="flex items-center gap-1.5 text-orange-600 text-[9px] font-black uppercase hover:opacity-70 transition-opacity">
-                        <ImageIcon className="w-3 h-3" /> {isGenerating ? 'Generando...' : 'Generar con IA'}
+                        <ImageIcon className="w-3 h-3" /> {isGenerating ? 'Generando...' : 'IA Foto'}
                     </button>
                 </div>
-                <input type="text" placeholder="URL de la imagen" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
-                {data.image && <img src={data.image} className="mt-2 h-20 w-32 object-cover rounded-xl shadow-md mx-auto" />}
+                <input type="text" placeholder="URL o Generada por IA" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
             </div>
             <div className="space-y-2">
                 <div className="flex justify-between items-center px-4">
                     <label className="text-[9px] font-black text-slate-400 uppercase">Descripción</label>
                     <button onClick={handleAIDescription} disabled={isGenerating} className="flex items-center gap-1.5 text-orange-600 text-[9px] font-black uppercase hover:opacity-70 transition-opacity">
-                        <Wand2 className="w-3 h-3" /> {isGenerating ? 'Redactando...' : 'Mejorar con IA'}
+                        <Wand2 className="w-3 h-3" /> {isGenerating ? 'Escribiendo...' : 'IA Texto'}
                     </button>
                 </div>
-                <textarea placeholder="Ingredientes, sabor..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner resize-none" />
+                <textarea placeholder="Descripción del sabor..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner resize-none" />
             </div>
             <div className="pt-8 space-y-4">
-                <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar Plato</button>
-                <button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Cancelar</button>
+                <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar en Base de Datos</button>
+                <button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Cerrar</button>
             </div>
         </div>
       </div>
