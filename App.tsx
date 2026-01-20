@@ -1,37 +1,20 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  ShoppingBag, ClipboardList, ChefHat, Sparkles, Plus, Minus, X,
+  ShoppingBag, ClipboardList, ChefHat, Plus, Minus, X,
   UtensilsCrossed, Timer, ShoppingBasket, Edit2, Lock, LogOut, 
-  Settings, Store, LayoutGrid, Home, Wifi, Database, Menu as MenuIcon
+  Settings, Store, LayoutGrid, Home, Database, Menu as MenuIcon
 } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, addDoc, query, orderBy } from 'firebase/firestore';
+import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, PaymentStatus } from './types';
 import { INITIAL_MENU, CATEGORIES, DEFAULT_BRANDING } from './constants';
 
-// --- CONFIGURACIÓN DE FIREBASE ---
-const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY || "TU_API_KEY_AQUI", 
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "tu-proyecto.firebaseapp.com",
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID || "tu-proyecto",
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "tu-proyecto.appspot.com",
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "0000000000",
-  appId: process.env.VITE_FIREBASE_APP_ID || "1:0000:web:0000"
-};
+// --- CONFIGURACIÓN DE SUPABASE ---
+// Reemplaza con tus credenciales de Supabase Dashboard -> Settings -> API
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://tu-proyecto.supabase.co";
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "tu-anon-key";
 
-let db: any = null;
-let isFirebaseEnabled = false;
-
-try {
-  if (firebaseConfig.projectId !== "tu-proyecto" && firebaseConfig.apiKey !== "TU_API_KEY_AQUI") {
-    const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    isFirebaseEnabled = true;
-  }
-} catch (e) {
-  console.warn("Modo local activado.");
-}
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const OrderTimer: React.FC<{ startTime: number }> = ({ startTime }) => {
   const [elapsed, setElapsed] = useState(0);
@@ -64,41 +47,72 @@ const App: React.FC = () => {
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [restaurantSettings, setRestaurantSettings] = useState(DEFAULT_BRANDING);
+  const [clickCount, setClickCount] = useState(0);
 
   useEffect(() => {
-    if (isFirebaseEnabled && db) {
-      const unsubMenu = onSnapshot(collection(db, "menu"), (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FoodItem[];
-        setMenuItems(items.length > 0 ? items : INITIAL_MENU);
-      });
-      const unsubOrders = onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snapshot) => {
-        const o = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Order[];
-        setOrders(o);
-      });
-      const unsubSettings = onSnapshot(doc(db, "settings", "branding"), (snapshot) => {
-        if (snapshot.exists()) {
-          setRestaurantSettings(snapshot.data() as any);
-        }
-      });
-      return () => { unsubMenu(); unsubOrders(); unsubSettings(); };
-    } else {
-      const savedMenu = localStorage.getItem('santa_menu');
-      setMenuItems(savedMenu ? JSON.parse(savedMenu) : INITIAL_MENU);
-      const savedOrders = localStorage.getItem('santa_orders');
-      setOrders(savedOrders ? JSON.parse(savedOrders) : []);
-      const savedSettings = localStorage.getItem('santa_settings');
-      if (savedSettings) setRestaurantSettings(JSON.parse(savedSettings));
-    }
+    const fetchData = async () => {
+      // 1. Cargar Menú
+      const { data: menuData } = await supabase.from('menu').select('*');
+      if (menuData && menuData.length > 0) setMenuItems(menuData as FoodItem[]);
+      else setMenuItems(INITIAL_MENU);
+
+      // 2. Cargar Pedidos Activos
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('*')
+        .order('createdAt', { ascending: false });
+      if (ordersData) setOrders(ordersData as Order[]);
+
+      // 3. Cargar Branding
+      const { data: settingsData } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 'branding')
+        .single();
+      if (settingsData) setRestaurantSettings(settingsData);
+    };
+
+    fetchData();
+
+    // SUSCRIPCIONES EN TIEMPO REAL (Realtime)
+    const menuSubscription = supabase
+      .channel('menu-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData)
+      .subscribe();
+
+    const ordersSubscription = supabase
+      .channel('orders-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        fetchData(); // Recargar todo para mantener consistencia
+      })
+      .subscribe();
+
+    const settingsSubscription = supabase
+      .channel('settings-changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'settings' }, fetchData)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(menuSubscription);
+      supabase.removeChannel(ordersSubscription);
+      supabase.removeChannel(settingsSubscription);
+    };
   }, []);
+
+  const handleSecretClick = () => {
+    const newCount = clickCount + 1;
+    setClickCount(newCount);
+    if (newCount >= 5) {
+      setShowLogin(true);
+      setClickCount(0);
+    }
+    setTimeout(() => setClickCount(0), 2000);
+  };
 
   const saveBranding = async (newName: string, newLogo: string) => {
     const newSettings = { name: newName || restaurantSettings.name, logoUrl: newLogo || restaurantSettings.logoUrl };
     setRestaurantSettings(newSettings);
-    if (isFirebaseEnabled && db) {
-      await setDoc(doc(db, "settings", "branding"), newSettings);
-    } else {
-      localStorage.setItem('santa_settings', JSON.stringify(newSettings));
-    }
+    await supabase.from('settings').upsert({ id: 'branding', ...newSettings });
   };
 
   const handlePayment = async () => {
@@ -115,24 +129,18 @@ const App: React.FC = () => {
       createdAt: Date.now()
     };
 
-    try {
-      if (isFirebaseEnabled) {
-        await addDoc(collection(db, "orders"), newOrder);
-      } else {
-        const updatedOrders = [{ ...newOrder, id: `L-${Date.now()}` }, ...orders];
-        setOrders(updatedOrders as Order[]);
-        localStorage.setItem('santa_orders', JSON.stringify(updatedOrders));
-      }
+    const { error } = await supabase.from('orders').insert([newOrder]);
+
+    if (!error) {
       setCart([]);
       setCustomerName('');
       setTableNumber('');
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
-    } catch (e) {
-      alert("Error al enviar el pedido");
-    } finally {
-      setIsPaying(false);
+    } else {
+      alert("Error al enviar el pedido a Supabase");
     }
+    setIsPaying(false);
   };
 
   const updateOrderStatus = async (orderId: string, currentStatus: OrderStatus) => {
@@ -140,13 +148,10 @@ const App: React.FC = () => {
     const currentIndex = statusOrder.indexOf(currentStatus);
     const nextStatus = statusOrder[Math.min(currentIndex + 1, statusOrder.length - 1)];
 
-    if (isFirebaseEnabled) {
-      await updateDoc(doc(db, "orders", orderId), { status: nextStatus });
-    } else {
-      const updated = orders.map(o => o.id === orderId ? { ...o, status: nextStatus } : o);
-      setOrders(updated);
-      localStorage.setItem('santa_orders', JSON.stringify(updated));
-    }
+    await supabase
+      .from('orders')
+      .update({ status: nextStatus })
+      .eq('id', orderId);
   };
 
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
@@ -158,11 +163,11 @@ const App: React.FC = () => {
       {/* SIDEBAR DESKTOP */}
       <nav className="hidden md:flex flex-col bg-slate-950 text-white sticky top-0 h-screen w-64 border-r border-white/10 shrink-0">
         <div className="p-8 text-center">
-          <div className="w-16 h-16 bg-orange-600 rounded-2xl mx-auto flex items-center justify-center mb-3 shadow-lg shadow-orange-600/20 overflow-hidden">
+          <div onClick={handleSecretClick} className="w-16 h-16 bg-orange-600 rounded-2xl mx-auto flex items-center justify-center mb-3 shadow-lg shadow-orange-600/20 overflow-hidden cursor-default active:scale-95 transition-transform">
             {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <UtensilsCrossed className="w-8 h-8" />}
           </div>
-          <h1 className="text-sm font-black uppercase tracking-widest truncate px-2">{restaurantSettings.name}</h1>
-          <p className="text-[8px] font-bold text-slate-500 uppercase mt-1">Sincronización Cloud</p>
+          <h1 onClick={handleSecretClick} className="text-sm font-black uppercase tracking-widest truncate px-2 cursor-default">{restaurantSettings.name}</h1>
+          <p className="text-[8px] font-bold text-slate-500 uppercase mt-1">Conectado a Supabase</p>
         </div>
         
         <div className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto no-scrollbar">
@@ -172,7 +177,7 @@ const App: React.FC = () => {
               <SidebarItem icon={<Settings />} label="Administrar" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
               <div className="pt-10">
                 <button onClick={() => { setIsStaffMode(false); setActiveView('menu'); }} className="w-full p-4 text-red-400 hover:bg-red-400/10 rounded-2xl flex items-center gap-3 transition-colors">
-                  <LogOut className="w-5 h-5" /> <span className="text-[10px] font-black uppercase">Salir Modo Staff</span>
+                  <LogOut className="w-5 h-5" /> <span className="text-[10px] font-black uppercase">Cerrar Sesión</span>
                 </button>
               </div>
             </>
@@ -181,18 +186,12 @@ const App: React.FC = () => {
               <p className="px-4 py-2 text-[9px] font-black text-slate-600 uppercase">Menú Digital</p>
               <SidebarItem icon={<LayoutGrid />} label="Todas" active={activeCategory === 'Todas'} onClick={() => setActiveCategory('Todas')} />
               {CATEGORIES.map(c => <SidebarItem key={c.id} icon={<span>{c.icon}</span>} label={c.id} active={activeCategory === c.id} onClick={() => setActiveCategory(c.id)} />)}
-              
-              <div className="mt-auto pt-10 pb-4 border-t border-white/5">
-                <button onClick={() => setShowLogin(true)} className="w-full p-4 text-slate-400 hover:bg-white/5 rounded-2xl flex items-center gap-3 transition-colors group">
-                  <Lock className="w-5 h-5 group-hover:text-orange-500 transition-colors" /> <span className="text-[10px] font-black uppercase">Acceso Personal</span>
-                </button>
-              </div>
             </>
           )}
         </div>
       </nav>
 
-      {/* MOBILE DRAWER (BARRA LATERAL MÓVIL) */}
+      {/* MOBILE DRAWER */}
       <div className={`fixed inset-0 z-[100] md:hidden transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
           <div className={`absolute top-0 left-0 h-full w-[280px] bg-slate-950 text-white p-8 transition-transform duration-300 transform shadow-2xl ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -205,20 +204,12 @@ const App: React.FC = () => {
                   </div>
                   <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-400"><X className="w-6 h-6" /></button>
               </div>
-
               <div className="space-y-4">
-                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Menú</p>
+                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Categorías</p>
                   <SidebarItem icon={<LayoutGrid />} label="Todas" active={activeCategory === 'Todas'} onClick={() => { setActiveCategory('Todas'); setIsMobileMenuOpen(false); }} />
                   {CATEGORIES.map(c => (
                     <SidebarItem key={c.id} icon={<span>{c.icon}</span>} label={c.id} active={activeCategory === c.id} onClick={() => { setActiveCategory(c.id); setIsMobileMenuOpen(false); }} />
                   ))}
-                  
-                  {/* El botón de acceso staff ahora está más oculto al final del menú lateral */}
-                  <div className="pt-10 border-t border-white/10 mt-6 opacity-40">
-                    <button onClick={() => { setIsMobileMenuOpen(false); setShowLogin(true); }} className="w-full p-4 bg-white/5 rounded-2xl flex items-center gap-4 text-white font-black text-[10px] uppercase">
-                        <Lock className="w-4 h-4" /> Configuración
-                    </button>
-                  </div>
               </div>
           </div>
       </div>
@@ -230,8 +221,8 @@ const App: React.FC = () => {
                 <MenuIcon className="w-6 h-6" />
             </button>
             <div className="flex flex-col">
-                <h2 className="text-sm md:text-lg font-black uppercase tracking-tight leading-none truncate max-w-[140px] md:max-w-none">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina' : 'Admin') : restaurantSettings.name}
+                <h2 onClick={handleSecretClick} className="text-sm md:text-lg font-black uppercase tracking-tight leading-none truncate max-w-[140px] md:max-w-none cursor-default active:opacity-60 transition-opacity">
+                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina' : 'Configuración') : restaurantSettings.name}
                 </h2>
                 {!isStaffMode && <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest mt-1">{activeCategory}</span>}
             </div>
@@ -272,7 +263,7 @@ const App: React.FC = () => {
                       }} 
                       className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-950 hover:text-white transition-all rounded-xl font-black text-[9px] uppercase border border-slate-100"
                     >
-                      Agregar
+                      Añadir
                     </button>
                   </div>
                 </div>
@@ -285,7 +276,7 @@ const App: React.FC = () => {
               {orders.filter(o => o.status !== OrderStatus.DELIVERED).length === 0 ? (
                 <div className="col-span-full py-32 text-center text-slate-300">
                   <ClipboardList className="w-16 h-16 mx-auto mb-4 opacity-10" />
-                  <p className="font-black uppercase text-xs tracking-widest opacity-40">Esperando pedidos...</p>
+                  <p className="font-black uppercase text-xs tracking-widest opacity-40">Sin pedidos activos</p>
                 </div>
               ) : (
                 orders.filter(o => o.status !== OrderStatus.DELIVERED).map(order => (
@@ -321,12 +312,10 @@ const App: React.FC = () => {
 
           {isStaffMode && activeView === 'admin' && (
             <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20">
-              
-              {/* CONFIGURACIÓN DEL NEGOCIO */}
               <div className="bg-white p-8 rounded-[40px] border shadow-sm space-y-6">
                 <div className="flex items-center gap-3 border-b pb-4">
                     <Store className="w-6 h-6 text-orange-600" />
-                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Identidad del <span className="text-orange-600 not-italic">Negocio</span></h3>
+                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Supabase Branding</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
@@ -339,7 +328,7 @@ const App: React.FC = () => {
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">URL del Logo</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-2">URL Logo</label>
                         <input 
                             type="text" 
                             placeholder="https://..."
@@ -353,17 +342,16 @@ const App: React.FC = () => {
 
               <div className="flex justify-between items-center bg-white p-6 rounded-[32px] border">
                 <div>
-                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Carta de <span className="text-orange-600 not-italic">Productos</span></h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Administra tu menú</p>
+                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Menú en <span className="text-orange-600 not-italic">PostgreSQL</span></h3>
                 </div>
-                <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-orange-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-orange-600/20 active:scale-95 transition-all">+ Añadir Plato</button>
+                <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-orange-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-orange-600/20 active:scale-95 transition-all">+ Nuevo</button>
               </div>
 
               <div className="bg-white rounded-[40px] border shadow-xl overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
-                      <tr><th className="p-6">Ítem</th><th className="p-6">Categoría</th><th className="p-6">Precio</th><th className="p-6 text-right">Acción</th></tr>
+                      <tr><th className="p-6">Ítem</th><th className="p-6">Precio</th><th className="p-6 text-right">Acción</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-bold">
                       {menuItems.map(item => (
@@ -371,9 +359,6 @@ const App: React.FC = () => {
                           <td className="p-6 flex items-center gap-4">
                             <img src={item.image} className="w-12 h-12 rounded-2xl object-cover shadow-sm" />
                             <span className="uppercase text-[11px] tracking-tight">{item.name}</span>
-                          </td>
-                          <td className="p-6">
-                            <span className="text-slate-400 uppercase text-[9px] bg-slate-100 px-2 py-1 rounded-lg">{item.category}</span>
                           </td>
                           <td className="p-6 text-orange-600 font-black text-sm">${item.price.toFixed(2)}</td>
                           <td className="p-6 text-right">
@@ -390,12 +375,12 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* MOBILE BOTTOM NAV - SOLO SE MUESTRA SI ES STAFF */}
+      {/* MOBILE BOTTOM NAV - SOLO STAFF */}
       {isStaffMode && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-2xl">
-          <MobileNavItem icon={<Home />} label="Ver Menú" active={activeView === 'menu'} onClick={() => setActiveView('menu')} />
+          <MobileNavItem icon={<Home />} label="Menú" active={activeView === 'menu'} onClick={() => setActiveView('menu')} />
           <MobileNavItem icon={<ChefHat />} label="Cocina" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} />
-          <MobileNavItem icon={<Settings />} label="Admin" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
+          <MobileNavItem icon={<Settings />} label="Panel" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
         </nav>
       )}
 
@@ -406,7 +391,7 @@ const App: React.FC = () => {
              <div className="w-16 h-16 bg-slate-100 rounded-[24px] flex items-center justify-center mx-auto mb-6 text-slate-900 shadow-inner">
                 <Lock className="w-8 h-8" />
              </div>
-             <h2 className="text-xl font-black uppercase tracking-tighter mb-2 italic">Acceso <span className="text-orange-600 not-italic">Restringido</span></h2>
+             <h2 className="text-xl font-black uppercase tracking-tighter mb-2 italic">Entrada Staff</h2>
              <p className="text-[9px] font-bold text-slate-400 uppercase mb-8">PIN: 1234</p>
              <input 
                 type="password" 
@@ -422,7 +407,7 @@ const App: React.FC = () => {
                     } 
                 }} 
              />
-             <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase transition-colors">Volver a la Carta</button>
+             <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase transition-colors">Volver</button>
           </div>
         </div>
       )}
@@ -440,7 +425,7 @@ const App: React.FC = () => {
                 {cart.length === 0 ? (
                   <div className="py-24 text-center text-slate-200">
                     <ShoppingBasket className="w-16 h-16 mx-auto mb-4 opacity-10" />
-                    <p className="font-black uppercase text-[10px] tracking-widest opacity-40">El carrito está vacío</p>
+                    <p className="font-black uppercase text-[10px] tracking-widest opacity-40">Carrito vacío</p>
                   </div>
                 ) : (
                   <>
@@ -460,14 +445,14 @@ const App: React.FC = () => {
                     ))}
                     <div className="pt-6 space-y-4">
                         <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-[11px] uppercase shadow-inner border border-slate-100" />
-                        <input type="text" placeholder="Mesa o Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-[11px] uppercase shadow-inner border border-slate-100" />
+                        <input type="text" placeholder="Mesa" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-[11px] uppercase shadow-inner border border-slate-100" />
                     </div>
                   </>
                 )}
              </div>
              <div className="p-8 border-t bg-white pb-safe">
                 <div className="flex justify-between items-end mb-8">
-                  <span className="text-[11px] font-black uppercase text-slate-400">Total Final</span>
+                  <span className="text-[11px] font-black uppercase text-slate-400">Total</span>
                   <span className="text-4xl font-black tracking-tighter">${cartTotal.toFixed(2)}</span>
                 </div>
                 <button 
@@ -475,7 +460,7 @@ const App: React.FC = () => {
                   disabled={cart.length === 0 || isPaying || !customerName}
                   className={`w-full py-5 rounded-3xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl transition-all duration-300 active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-30'}`}
                 >
-                  {isPaying ? 'Procesando...' : paymentSuccess ? '¡Enviado!' : 'Confirmar Pedido'}
+                  {isPaying ? 'Enviando...' : paymentSuccess ? '¡Hecho!' : 'Pedir Ahora'}
                 </button>
              </div>
           </div>
@@ -486,17 +471,10 @@ const App: React.FC = () => {
         <AdminForm 
           item={editingItem} 
           onSave={async (itemData: any) => {
-            if (isFirebaseEnabled) {
-              if (itemData.id) {
-                const { id, ...rest } = itemData;
-                await updateDoc(doc(db, "menu", id), rest);
-              } else {
-                await addDoc(collection(db, "menu"), itemData);
-              }
+            if (itemData.id) {
+              await supabase.from('menu').update(itemData).eq('id', itemData.id);
             } else {
-              const updated = itemData.id ? menuItems.map(i => i.id === itemData.id ? itemData : i) : [...menuItems, { ...itemData, id: `L-${Date.now()}` }];
-              setMenuItems(updated);
-              localStorage.setItem('santa_menu', JSON.stringify(updated));
+              await supabase.from('menu').insert([itemData]);
             }
             setIsAdminFormOpen(false);
           }} 
@@ -507,7 +485,6 @@ const App: React.FC = () => {
   );
 };
 
-// Componentes Auxiliares
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
   <button onClick={onClick} className={`relative w-full p-4 flex items-center gap-4 rounded-2xl transition-all duration-300 group ${active ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-500 hover:bg-white/5'}`}>
     <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>{icon}</div>
@@ -528,7 +505,7 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
   return (
     <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl z-[300] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in duration-300">
       <div className="bg-white w-full max-w-lg rounded-[48px] p-8 md:p-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
-        <h2 className="text-2xl font-black uppercase tracking-tighter mb-8 italic">{item ? 'Actualizar' : 'Crear'} <span className="text-orange-600 not-italic">Ítem</span></h2>
+        <h2 className="text-2xl font-black uppercase tracking-tighter mb-8 italic">{item ? 'Editar' : 'Nuevo'} Plato</h2>
         <div className="space-y-4">
             <input type="text" placeholder="Nombre" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[20px] font-black text-xs outline-none border border-slate-100 shadow-inner" />
           <div className="flex gap-4">
@@ -540,7 +517,7 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
           <input type="text" placeholder="URL Imagen" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[20px] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
           <textarea placeholder="Descripción..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[20px] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner" />
           <div className="pt-6 space-y-3">
-            <button onClick={() => onSave(data)} className="w-full py-5 bg-orange-600 text-white rounded-[24px] font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">Guardar</button>
+            <button onClick={() => onSave(data)} className="w-full py-5 bg-orange-600 text-white rounded-[24px] font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">Guardar en Supabase</button>
             <button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase">Cancelar</button>
           </div>
         </div>
