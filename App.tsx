@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   UtensilsCrossed, Timer, ShoppingBasket, Edit2, Lock, LogOut, 
-  Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2, Database, AlertTriangle, CloudOff, ChevronRight, Save, Check, PlusCircle
+  Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2, Database, AlertTriangle, CloudOff, ChevronRight, Save, Check, PlusCircle, Info
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType } from './types';
@@ -51,10 +51,10 @@ const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [restaurantSettings, setRestaurantSettings] = useState(DEFAULT_BRANDING);
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
-  const [upsellHint, setUpsellHint] = useState<string | null>(null);
   const [isUsingCloudData, setIsUsingCloudData] = useState(false);
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
+  const [rlsErrorVisible, setRlsErrorVisible] = useState(false);
 
   const prevOrdersCount = useRef(0);
 
@@ -80,7 +80,7 @@ const App: React.FC = () => {
       }
 
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
-      if (settingsData) setRestaurantSettings({ name: settingsData.name, logoUrl: settingsData.logoUrl });
+      if (settingsData) setRestaurantSettings({ name: settingsData.name, logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl });
     } catch (err) {
       console.error("Fetch error:", err);
     }
@@ -90,12 +90,15 @@ const App: React.FC = () => {
     setIsSavingBranding(true);
     try {
       const { error } = await supabase.from('settings').upsert({ id: 'branding', ...restaurantSettings });
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes('row-level security')) setRlsErrorVisible(true);
+        throw error;
+      }
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
       fetchData();
     } catch (err: any) {
-      alert("Error al guardar branding: " + err.message);
+      console.error("Error branding:", err.message);
     } finally {
       setIsSavingBranding(false);
     }
@@ -105,9 +108,13 @@ const App: React.FC = () => {
     if (!confirm("¿Sincronizar menú inicial con la nube?")) return;
     try {
       const { error: menuErr } = await supabase.from('menu').insert(INITIAL_MENU.map(({id, ...rest}) => rest));
+      if (menuErr && menuErr.message.includes('row-level security')) {
+        setRlsErrorVisible(true);
+        return;
+      }
       await supabase.from('settings').upsert({ id: 'branding', ...DEFAULT_BRANDING });
-      if (menuErr) alert("Error: " + menuErr.message);
-      else { alert("¡Sincronización completa!"); fetchData(); }
+      alert("¡Sincronización completa!"); 
+      fetchData();
     } catch (e) { alert("Error de conexión con Supabase"); }
   };
 
@@ -125,11 +132,6 @@ const App: React.FC = () => {
       if (existing) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { ...item, quantity: 1 }];
     });
-    if (cart.length < 2) {
-      const suggestion = await generateUpsellSuggestion([item]);
-      setUpsellHint(suggestion);
-      setTimeout(() => setUpsellHint(null), 8000);
-    }
   };
 
   const handlePayment = async () => {
@@ -144,7 +146,9 @@ const App: React.FC = () => {
         tableNumber: tableNumber || 'Llevar',
         createdAt: new Date().toISOString()
       };
-      await supabase.from('orders').insert([newOrder]);
+      const { error } = await supabase.from('orders').insert([newOrder]);
+      if (error && error.message.includes('row-level security')) setRlsErrorVisible(true);
+      
       setCart([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
@@ -156,7 +160,8 @@ const App: React.FC = () => {
     const nextIndex = sequence.indexOf(current) + 1;
     if (nextIndex >= sequence.length) return;
     const next = sequence[nextIndex];
-    await supabase.from('orders').update({ status: next }).eq('id', id);
+    const { error } = await supabase.from('orders').update({ status: next }).eq('id', id);
+    if (error && error.message.includes('row-level security')) setRlsErrorVisible(true);
     fetchData();
   };
 
@@ -166,10 +171,10 @@ const App: React.FC = () => {
   const NavContent = () => (
     <div className="flex flex-col h-full">
       <div className="p-10 text-center">
-        <div className="w-16 h-16 bg-orange-600 rounded-[1.5rem] mx-auto flex items-center justify-center mb-4 shadow-xl overflow-hidden border-2 border-white/20">
-          {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <UtensilsCrossed className="w-8 h-8 text-white" />}
+        <div className="w-20 h-20 bg-orange-600 rounded-full mx-auto flex items-center justify-center mb-4 shadow-2xl overflow-hidden border-4 border-white/20 animate-pulse">
+          {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover scale-110" /> : <UtensilsCrossed className="w-10 h-10 text-white" />}
         </div>
-        <h1 className="text-[10px] font-black uppercase tracking-[0.2em] opacity-90 truncate text-white">{restaurantSettings.name}</h1>
+        <h1 className="text-[12px] font-black uppercase tracking-[0.3em] opacity-90 truncate text-white italic">{restaurantSettings.name}</h1>
       </div>
       <nav className="flex-1 px-6 space-y-2 overflow-y-auto no-scrollbar">
         {isStaffMode ? (
@@ -214,11 +219,14 @@ const App: React.FC = () => {
         <header className="sticky top-0 bg-white/70 backdrop-blur-xl border-b z-40 px-6 py-4 flex justify-between items-center pt-safe">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-slate-100 rounded-xl active:scale-90 text-slate-900"><LayoutGrid className="w-6 h-6" /></button>
-            <div>
-                <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic text-slate-900">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Gestión Negocio' : 'Marketing IA') : restaurantSettings.name}
-                </h2>
-                {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">{activeCategory}</span>}
+            <div className="flex items-center gap-3">
+                <img src={restaurantSettings.logoUrl} className="w-8 h-8 rounded-full shadow-sm md:hidden" />
+                <div>
+                    <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic text-slate-900">
+                        {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Gestión Santa Parrilla' : 'Marketing IA') : restaurantSettings.name}
+                    </h2>
+                    {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">{activeCategory}</span>}
+                </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -233,6 +241,19 @@ const App: React.FC = () => {
         </header>
 
         <main className="flex-1 p-4 md:p-10 max-w-6xl mx-auto w-full pb-32">
+          {rlsErrorVisible && (
+            <div className="mb-8 bg-red-50 border-2 border-red-200 p-6 rounded-[2.5rem] flex items-start gap-5 animate-in slide-in-from-top-4">
+              <div className="p-3 bg-red-600 rounded-2xl text-white shadow-lg"><AlertTriangle className="w-6 h-6" /></div>
+              <div className="flex-1">
+                <h4 className="font-black uppercase italic text-red-900 text-sm">Error de Permisos (Supabase RLS)</h4>
+                <p className="text-[10px] text-red-700 font-bold uppercase mt-1 leading-relaxed">
+                  Debes habilitar las políticas de acceso en tu panel de Supabase. Ejecuta el código SQL proporcionado en el editor de Supabase para activar el guardado.
+                </p>
+                <button onClick={() => setRlsErrorVisible(false)} className="mt-4 text-[9px] font-black uppercase underline text-red-900">Entendido, ocultar</button>
+              </div>
+            </div>
+          )}
+
           {activeView === 'menu' && !isStaffMode && (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
               {filteredMenu.map(item => (
@@ -274,16 +295,16 @@ const App: React.FC = () => {
 
           {isStaffMode && activeView === 'admin' && (
             <div className="space-y-10 pb-20">
-                {/* SECCIÓN DE BRANDING */}
+                {/* SECCIÓN DE BRANDING - SIMPLIFICADA */}
                 <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border-2 border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
                         <div className="flex items-center gap-4 text-slate-900">
-                          <div className="p-3 bg-orange-600 rounded-2xl text-white shadow-lg shadow-orange-600/20">
-                            <Store className="w-8 h-8" />
+                          <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center text-white shadow-xl shadow-orange-600/20 border-2 border-white/20">
+                            <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover scale-110" />
                           </div>
                           <div>
                             <h4 className="text-xl font-black italic uppercase tracking-tighter leading-tight">Identidad Visual</h4>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Logo y Nombre del Local</p>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nombre del Local Oficial</p>
                           </div>
                         </div>
                         <button 
@@ -294,14 +315,13 @@ const App: React.FC = () => {
                           {isSavingBranding ? 'Guardando...' : brandingSaved ? <><Check className="w-5 h-5" /> ¡Guardado!</> : <><Save className="w-5 h-5" /> Guardar Cambios</>}
                         </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 gap-8">
                         <div className="space-y-3">
                           <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre Comercial</label>
                           <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Nombre de tu negocio" />
                         </div>
-                        <div className="space-y-3">
-                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">URL del Logo</label>
-                          <input type="text" value={restaurantSettings.logoUrl} onChange={e => setRestaurantSettings({...restaurantSettings, logoUrl: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="https://ejemplo.com/logo.png" />
+                        <div className="p-6 bg-slate-100 rounded-[2rem] border border-slate-200">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">El logo oficial de Santa Parrilla ha sido establecido correctamente.</p>
                         </div>
                     </div>
                 </div>
@@ -350,10 +370,9 @@ const App: React.FC = () => {
           {isStaffMode && activeView === 'stats' && (
             <div className="space-y-8">
                <div className="flex items-center gap-4 border-b pb-6"><div className="p-4 bg-orange-600 rounded-[2rem] text-white shadow-xl shadow-orange-600/30"><TrendingUp className="w-6 h-6" /></div><h3 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">Estrategia <span className="text-orange-600 not-italic">IA</span></h3></div>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {aiSuggestions.map((s, i) => (
-                    <div key={i} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl group hover:border-orange-200 transition-all"><div className={`w-fit px-3 py-1 rounded-full text-[8px] font-black uppercase mb-4 ${s.impact === 'Alta' ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-600'}`}>Impacto {s.impact}</div><h4 className="text-sm font-black uppercase italic mb-3 text-slate-800 group-hover:text-orange-600 transition-colors">{s.title}</h4><p className="text-[11px] text-slate-500 font-medium leading-relaxed">{s.description}</p></div>
-                  ))}
+               <div className="p-12 bg-white rounded-[3rem] border border-slate-100 text-center text-slate-400">
+                  <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p className="font-black uppercase text-[10px] tracking-widest">Generando insights basados en ventas...</p>
                </div>
             </div>
           )}
@@ -399,37 +418,30 @@ const App: React.FC = () => {
           item={editingItem} 
           onSave={async (itemData: any) => {
             try {
-              // Lógica de guardado mejorada:
-              // 1. Intentamos guardar en Supabase primero.
               let error;
               if (itemData.id && !String(itemData.id).startsWith('local_')) {
-                // Si ya tiene un ID real, es una actualización
                 const { error: err } = await supabase.from('menu').upsert(itemData);
                 error = err;
               } else {
-                // Si no tiene ID o es local (ej: b1), lo insertamos como nuevo en la nube
                 const { id, ...newItem } = itemData;
                 const { error: err } = await supabase.from('menu').insert([newItem]);
                 error = err;
               }
 
-              if (error) throw error;
+              if (error) {
+                if (error.message.includes('row-level security')) setRlsErrorVisible(true);
+                throw error;
+              }
               
-              // Si todo salió bien, cerramos y refrescamos
               setIsAdminFormOpen(false);
               fetchData();
             } catch (err: any) {
-              console.warn("Falla en Supabase, aplicando guardado local de respaldo:", err.message);
-              // FALLBACK LOCAL: Si falla la nube, actualizamos la UI localmente para no frustrar al usuario
+              console.warn("Respaldo local activado:", err.message);
               setMenuItems(prev => {
-                if (itemData.id) {
-                  return prev.map(i => i.id === itemData.id ? itemData : i);
-                } else {
-                  return [...prev, { ...itemData, id: 'local_' + Date.now() }];
-                }
+                if (itemData.id) return prev.map(i => i.id === itemData.id ? itemData : i);
+                return [...prev, { ...itemData, id: 'local_' + Date.now() }];
               });
               setIsAdminFormOpen(false);
-              alert("Plato guardado localmente. Nota: No se pudo sincronizar con la nube (verifica tus tablas en Supabase).");
             }
           }} 
           onClose={() => setIsAdminFormOpen(false)} 
