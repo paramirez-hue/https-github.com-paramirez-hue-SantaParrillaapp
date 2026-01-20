@@ -11,15 +11,14 @@ import { INITIAL_MENU, CATEGORIES } from './constants';
 import { getSmartSuggestions } from './geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-// --- CONFIGURACIÓN DE FIREBASE ---
-// Reemplaza estos valores cuando logres crear tu proyecto en console.firebase.google.com
+// --- CONFIGURACIÓN DE FIREBASE (Prioriza variables de entorno para Vercel) ---
 const firebaseConfig = {
-  apiKey: "OPCIONAL_KEY", 
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.appspot.com",
-  messagingSenderId: "TU_ID",
-  appId: "TU_APP_ID"
+  apiKey: process.env.VITE_FIREBASE_API_KEY || "OPCIONAL_KEY", 
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "TU_PROYECTO.firebaseapp.com",
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID || "TU_PROYECTO",
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "TU_PROYECTO.appspot.com",
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "TU_ID",
+  appId: process.env.VITE_FIREBASE_APP_ID || "TU_APP_ID"
 };
 
 // --- INICIALIZACIÓN SEGURA ---
@@ -30,14 +29,13 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, addDoc, query, orderBy } from 'firebase/firestore';
 
 try {
-  // Solo intentamos conectar si el usuario cambió los valores por defecto
   if (firebaseConfig.projectId !== "TU_PROYECTO" && firebaseConfig.apiKey !== "OPCIONAL_KEY") {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     isFirebaseEnabled = true;
   }
 } catch (e) {
-  console.error("Error conectando a Firebase:", e);
+  console.warn("Modo offline activado (Firebase no configurado)");
 }
 
 const OrderTimer: React.FC<{ startTime: number }> = ({ startTime }) => {
@@ -71,7 +69,6 @@ const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // Sincronización de datos
   useEffect(() => {
     if (isFirebaseEnabled && db) {
       const unsubMenu = onSnapshot(collection(db, "menu"), (snapshot) => {
@@ -174,7 +171,7 @@ const App: React.FC = () => {
         <div className="p-4 border-t border-white/5 flex flex-col items-center gap-2">
            <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isFirebaseEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-              {!isSidebarCollapsed && <span className="text-[8px] font-black text-slate-500 uppercase">{isFirebaseEnabled ? 'Nube Activa' : 'Modo Local'}</span>}
+              {!isSidebarCollapsed && <span className="text-[8px] font-black text-slate-500 uppercase">{isFirebaseEnabled ? 'Sincronizado' : 'Modo Local'}</span>}
            </div>
         </div>
       </nav>
@@ -196,7 +193,6 @@ const App: React.FC = () => {
         </header>
 
         <main className="flex-1 p-4 md:p-8">
-          {/* VISTA MENÚ CLIENTE */}
           {activeView === 'menu' && !isStaffMode && (
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredMenu.map(item => (
@@ -226,7 +222,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* VISTA COCINA */}
           {isStaffMode && activeView === 'kitchen' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {orders.filter(o => o.status !== OrderStatus.DELIVERED).length === 0 ? (
@@ -259,7 +254,7 @@ const App: React.FC = () => {
                         onClick={() => updateOrderStatus(order.id, order.status)}
                         className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm active:scale-95 transition-all ${order.status === OrderStatus.READY ? 'bg-emerald-600 text-white' : 'bg-slate-950 text-white'}`}
                       >
-                        {order.status === OrderStatus.PENDING ? 'Empezar a Cocinar' : order.status === OrderStatus.PREPARING ? 'Marcar como Listo' : 'Entregado'}
+                        {order.status === OrderStatus.PENDING ? 'Cocinando' : order.status === OrderStatus.PREPARING ? '¡Listo!' : 'Entregar'}
                       </button>
                     </div>
                   </div>
@@ -268,18 +263,16 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* VISTA ADMIN */}
           {isStaffMode && activeView === 'admin' && (
             <div className="max-w-4xl mx-auto space-y-8">
-              {/* STATUS CARD */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center gap-4">
                   <div className={`p-3 rounded-2xl ${isFirebaseEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
                     <Wifi className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black uppercase">Estado Sincronización</h4>
-                    <p className="text-[10px] font-bold text-slate-500">{isFirebaseEnabled ? 'Conectado a Google Cloud' : 'Trabajando en Modo Local'}</p>
+                    <h4 className="text-xs font-black uppercase">Sincronización</h4>
+                    <p className="text-[10px] font-bold text-slate-500">{isFirebaseEnabled ? 'En línea' : 'Modo Local'}</p>
                   </div>
                 </div>
                 <div className="bg-white p-6 rounded-3xl border shadow-sm flex items-center gap-4">
@@ -287,34 +280,33 @@ const App: React.FC = () => {
                     <Sparkles className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black uppercase">Inteligencia Artificial</h4>
-                    <p className="text-[10px] font-bold text-slate-500">{process.env.API_KEY ? 'Asistente IA Activo' : 'Sin configurar (Opcional)'}</p>
+                    <h4 className="text-xs font-black uppercase">Asistente IA</h4>
+                    <p className="text-[10px] font-bold text-slate-500">{process.env.API_KEY ? 'Activo' : 'Inactivo'}</p>
                   </div>
                 </div>
               </div>
 
               {!isFirebaseEnabled && (
-                <div className="bg-orange-50 border border-orange-200 p-6 rounded-3xl flex gap-4">
-                  <Info className="w-6 h-6 text-orange-600 shrink-0" />
-                  <div className="space-y-2">
-                    <p className="text-xs font-black text-orange-950 uppercase">Nota sobre Firebase</p>
-                    <p className="text-[10px] font-medium text-orange-800 leading-relaxed">
-                      Tu aplicación está funcionando en "Modo Local". Los pedidos se guardan solo en este dispositivo. 
-                      Para que los pedidos lleguen de un celular a otro, debes crear un proyecto en <b>Firebase Console</b> y pegar las llaves en el archivo <code>App.tsx</code>.
+                <div className="bg-blue-50 border border-blue-100 p-6 rounded-3xl flex gap-4">
+                  <Info className="w-6 h-6 text-blue-600 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-blue-950 uppercase">Consejo Vercel</p>
+                    <p className="text-[10px] font-medium text-blue-800 leading-relaxed">
+                      Para activar la nube, añade las variables <code>VITE_FIREBASE_API_KEY</code> y <code>VITE_FIREBASE_PROJECT_ID</code> en tu panel de Vercel.
                     </p>
                   </div>
                 </div>
               )}
 
               <div className="flex justify-between items-center">
-                <h3 className="text-xl font-black uppercase tracking-tight">Menú Actual</h3>
-                <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-orange-600 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">+ Añadir Plato</button>
+                <h3 className="text-xl font-black uppercase tracking-tight">Menú de Santa Parrilla</h3>
+                <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-orange-600 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">+ Nuevo Plato</button>
               </div>
 
               <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase">
-                    <tr><th className="p-5">Plato</th><th className="p-5">Categoría</th><th className="p-5">Precio</th><th className="p-5 text-right">Acciones</th></tr>
+                    <tr><th className="p-5">Plato</th><th className="p-5">Categoría</th><th className="p-5">Precio</th><th className="p-5 text-right">Editar</th></tr>
                   </thead>
                   <tbody className="divide-y font-bold">
                     {menuItems.map(item => (
@@ -338,105 +330,77 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* NAVEGACIÓN MÓVIL */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-950 text-white flex items-center justify-around pb-safe z-50">
         <MobileNavItem icon={<Home />} label="Menú" active={!isStaffMode && activeView === 'menu'} onClick={() => { setIsStaffMode(false); setActiveView('menu'); }} />
         <MobileNavItem icon={<ChefHat />} label="Cocina" active={isStaffMode && activeView === 'kitchen'} onClick={() => { setIsStaffMode(true); setActiveView('kitchen'); }} />
         <MobileNavItem icon={isStaffMode ? <Settings /> : <Lock />} label={isStaffMode ? "Admin" : "Staff"} active={isStaffMode && activeView === 'admin'} onClick={() => isStaffMode ? setActiveView('admin') : setShowLogin(true)} />
       </nav>
 
-      {/* MODAL LOGIN PIN */}
       {showLogin && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[40px] p-10 text-center animate-in zoom-in duration-300">
              <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto mb-6 text-slate-900"><Lock className="w-8 h-8" /></div>
              <h2 className="text-2xl font-black uppercase tracking-tighter mb-2">Acceso Staff</h2>
-             <p className="text-[10px] font-bold text-slate-400 uppercase mb-10">Ingresa el PIN de seguridad</p>
-             <input 
-              type="password" 
-              placeholder="••••" 
-              maxLength={4}
-              className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[1em] outline-none focus:ring-4 ring-orange-500/20 transition-all" 
-              autoFocus 
-              onChange={(e) => { 
-                if(e.target.value === '1234') { 
-                  setIsStaffMode(true); 
-                  setShowLogin(false); 
-                  setActiveView('kitchen'); 
-                } 
-              }} 
-             />
-             <button onClick={() => setShowLogin(false)} className="mt-10 text-[10px] font-black text-slate-400 uppercase hover:text-slate-900 transition-colors">Volver al Menú</button>
+             <input type="password" placeholder="PIN" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[1em] outline-none" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
+             <button onClick={() => setShowLogin(false)} className="mt-10 text-[10px] font-black text-slate-400 uppercase">Cerrar</button>
           </div>
         </div>
       )}
 
-      {/* CARRITO / CHECKOUT */}
       {isCartOpen && (
         <div className="fixed inset-0 z-[60] flex justify-end">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
              <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
-                <h2 className="text-xl font-black uppercase tracking-tighter italic">Mi <span className="text-orange-600 not-italic">Orden</span></h2>
+                <h2 className="text-xl font-black uppercase tracking-tighter italic">Tu <span className="text-orange-600 not-italic">Orden</span></h2>
                 <button onClick={() => setIsCartOpen(false)} className="p-2 bg-white rounded-full shadow-sm border"><X className="w-5 h-5" /></button>
              </div>
              <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
                 {cart.length === 0 ? (
                   <div className="py-20 text-center text-slate-300">
                     <ShoppingBasket className="w-16 h-16 mx-auto mb-4 opacity-10" />
-                    <p className="font-black uppercase text-[10px] tracking-widest">Carrito vacío</p>
+                    <p className="font-black uppercase text-[10px] tracking-widest">Nada por aquí aún</p>
                   </div>
                 ) : (
                   <>
                     {cart.map(item => (
-                      <div key={item.id} className="flex items-center gap-4 bg-white border p-4 rounded-3xl shadow-sm">
+                      <div key={item.id} className="flex items-center gap-4 bg-white border p-4 rounded-3xl">
                         <img src={item.image} className="w-14 h-14 rounded-2xl object-cover" />
                         <div className="flex-1">
                           <p className="text-[10px] font-black uppercase truncate">{item.name}</p>
-                          <div className="flex items-center gap-4 mt-2">
-                            <div className="flex items-center gap-3 bg-slate-100 px-3 py-1.5 rounded-xl">
-                              <button onClick={() => {
-                                setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0));
-                              }} className="hover:text-orange-600"><Minus className="w-3 h-3" /></button>
+                          <div className="flex items-center gap-3 bg-slate-100 px-3 py-1.5 rounded-xl w-fit mt-2">
+                              <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0))}><Minus className="w-3 h-3" /></button>
                               <span className="text-[10px] font-black">{item.quantity}</span>
-                              <button onClick={() => {
-                                setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i));
-                              }} className="hover:text-orange-600"><Plus className="w-3 h-3" /></button>
-                            </div>
+                              <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))}><Plus className="w-3 h-3" /></button>
                           </div>
                         </div>
                         <span className="text-xs font-black text-orange-600">${(item.price * item.quantity).toFixed(2)}</span>
                       </div>
                     ))}
                     <div className="pt-6 space-y-4">
-                      <div className="relative">
-                        <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-xs uppercase placeholder:text-slate-300 focus:ring-2 ring-orange-100" />
-                      </div>
-                      <div className="relative">
-                        <input type="text" placeholder="Mesa / Habitación" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-xs uppercase placeholder:text-slate-300 focus:ring-2 ring-orange-100" />
-                      </div>
+                        <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-xs uppercase" />
+                        <input type="text" placeholder="Mesa / Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-xs uppercase" />
                     </div>
                   </>
                 )}
              </div>
-             <div className="p-8 border-t bg-white shadow-[0_-20px_40px_rgba(0,0,0,0.02)]">
+             <div className="p-8 border-t bg-white">
                 <div className="flex justify-between items-end mb-8">
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Total Estimado</span>
-                  <span className="text-4xl font-black tracking-tighter text-slate-950">${cartTotal.toFixed(2)}</span>
+                  <span className="text-[10px] font-black uppercase text-slate-400">Total</span>
+                  <span className="text-4xl font-black tracking-tighter">${cartTotal.toFixed(2)}</span>
                 </div>
                 <button 
                   onClick={handlePayment} 
                   disabled={cart.length === 0 || isPaying || !customerName}
-                  className={`w-full py-5 rounded-[20px] font-black text-xs uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}
+                  className={`w-full py-5 rounded-[20px] font-black text-xs uppercase tracking-widest shadow-2xl transition-all ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}
                 >
-                  {isPaying ? 'Enviando Pedido...' : paymentSuccess ? '¡Pedido Enviado!' : 'Confirmar Pedido'}
+                  {isPaying ? 'Enviando...' : paymentSuccess ? '¡Listo!' : 'Pedir Ahora'}
                 </button>
              </div>
           </div>
         </div>
       )}
 
-      {/* FORMULARIO ADMIN PLATO */}
       {isAdminFormOpen && (
         <AdminForm 
           item={editingItem} 
@@ -462,20 +426,18 @@ const App: React.FC = () => {
   );
 };
 
-// --- COMPONENTES AUXILIARES ---
-
 const SidebarItem = ({ icon, label, active, onClick, collapsed, badge }: any) => (
-  <button onClick={onClick} className={`relative w-full p-4 flex items-center ${collapsed ? 'justify-center' : 'gap-4'} rounded-2xl transition-all ${active ? 'bg-orange-600 text-white shadow-xl translate-x-1' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`}>
+  <button onClick={onClick} className={`relative w-full p-4 flex items-center ${collapsed ? 'justify-center' : 'gap-4'} rounded-2xl transition-all ${active ? 'bg-orange-600 text-white shadow-xl' : 'text-slate-500 hover:bg-white/5'}`}>
     {icon}
-    {!collapsed && <span className="text-[10px] font-black uppercase tracking-[0.1em]">{label}</span>}
-    {badge > 0 && <span className="absolute top-3 right-3 bg-red-600 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full border-2 border-slate-950 animate-bounce">{badge}</span>}
+    {!collapsed && <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>}
+    {badge > 0 && <span className="absolute top-3 right-3 bg-red-600 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full">{badge}</span>}
   </button>
 );
 
 const MobileNavItem = ({ icon, label, active, onClick }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-1.5 transition-all ${active ? 'text-orange-500 scale-110' : 'text-slate-500 opacity-60'}`}>
+  <button onClick={onClick} className={`flex flex-col items-center gap-1.5 transition-all ${active ? 'text-orange-500' : 'text-slate-500 opacity-60'}`}>
     {React.cloneElement(icon as React.ReactElement, { className: 'w-5 h-5' })}
-    <span className="text-[8px] font-black uppercase tracking-tighter">{label}</span>
+    <span className="text-[8px] font-black uppercase">{label}</span>
   </button>
 );
 
@@ -483,36 +445,21 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
   const [data, setData] = useState(item || { name: '', price: 0, category: 'Hamburguesas', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&h=300', description: '' });
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[110] flex items-center justify-center p-6 overflow-y-auto">
-      <div className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl animate-in slide-in-from-bottom duration-500">
-        <h2 className="text-2xl font-black uppercase tracking-tighter mb-8">{item ? 'Actualizar' : 'Añadir'} Producto</h2>
+      <div className="bg-white w-full max-w-lg rounded-[40px] p-10 shadow-2xl animate-in slide-in-from-bottom">
+        <h2 className="text-2xl font-black uppercase tracking-tighter mb-8">{item ? 'Actualizar' : 'Nuevo'} Plato</h2>
         <div className="space-y-5">
-          <div className="space-y-2">
-            <label className="text-[9px] font-black uppercase text-slate-400 px-1">Nombre del Plato</label>
-            <input type="text" placeholder="Ej: Burger Santa" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-black text-xs outline-none focus:ring-4 ring-orange-500/10" />
-          </div>
+            <input type="text" placeholder="Nombre" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-black text-xs outline-none" />
           <div className="flex gap-4">
-            <div className="flex-1 space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-400 px-1">Precio ($)</label>
-              <input type="number" placeholder="0.00" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-5 bg-slate-50 rounded-2xl font-black text-xs outline-none focus:ring-4 ring-orange-500/10" />
-            </div>
-            <div className="flex-1 space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-400 px-1">Categoría</label>
+              <input type="number" placeholder="Precio" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-5 bg-slate-50 rounded-2xl font-black text-xs outline-none" />
               <select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-black text-[10px] outline-none uppercase">
                 {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
               </select>
-            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-[9px] font-black uppercase text-slate-400 px-1">URL de la Imagen</label>
-            <input type="text" placeholder="https://..." value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-bold text-[10px] outline-none" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[9px] font-black uppercase text-slate-400 px-1">Descripción</label>
-            <textarea placeholder="Ingredientes, alérgenos..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-bold text-[10px] outline-none h-24" />
-          </div>
+          <input type="text" placeholder="URL de la Imagen" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-bold text-[10px] outline-none" />
+          <textarea placeholder="Descripción" value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl font-bold text-[10px] outline-none h-24" />
           <div className="pt-4 space-y-3">
-            <button onClick={() => onSave(data)} className="w-full py-5 bg-orange-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-orange-900/20 active:scale-95 transition-all">Guardar Producto</button>
-            <button onClick={onClose} className="w-full py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
+            <button onClick={() => onSave(data)} className="w-full py-5 bg-orange-600 text-white rounded-2xl font-black uppercase text-xs">Guardar</button>
+            <button onClick={onClose} className="w-full py-4 text-[10px] font-black text-slate-400 uppercase">Cerrar</button>
           </div>
         </div>
       </div>
