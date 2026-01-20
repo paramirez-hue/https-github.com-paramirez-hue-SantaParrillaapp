@@ -10,16 +10,15 @@ import { FoodItem, Order, OrderItem, OrderStatus, ViewType, PaymentStatus } from
 import { INITIAL_MENU, CATEGORIES, DEFAULT_BRANDING } from './constants';
 import { getSmartSuggestions, generateUpsellSuggestion } from './geminiService';
 
-// Reemplaza estas constantes con tus valores de Supabase si no usas variables de entorno
-const SUPABASE_URL = (window as any).env?.VITE_SUPABASE_URL || "https://tu-proyecto.supabase.co";
-const SUPABASE_ANON_KEY = (window as any).env?.VITE_SUPABASE_ANON_KEY || "tu-key-anonima";
+// Credenciales actualizadas de Supabase
+const SUPABASE_URL = "https://ejerqcxzvfwnccdadytj.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Y3cEubsUUZwHNOKj1uqasQ_lrzXbdS6";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const OrderTimer: React.FC<{ startTime: any }> = ({ startTime }) => {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    // Manejar tanto números como strings ISO de Supabase
     const start = typeof startTime === 'string' ? new Date(startTime).getTime() : startTime;
     const interval = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 60000)), 10000);
     setElapsed(Math.floor((Date.now() - start) / 60000));
@@ -55,19 +54,23 @@ const App: React.FC = () => {
   const [clickCount, setClickCount] = useState(0);
 
   const fetchData = async () => {
-    const { data: menuData } = await supabase.from('menu').select('*');
-    if (menuData) setMenuItems(menuData);
-    else if (menuItems.length === 0) setMenuItems(INITIAL_MENU);
+    try {
+      const { data: menuData } = await supabase.from('menu').select('*');
+      if (menuData && menuData.length > 0) setMenuItems(menuData);
+      else setMenuItems(INITIAL_MENU);
 
-    const { data: ordersData } = await supabase
-      .from('orders')
-      .select('*')
-      .neq('status', OrderStatus.DELIVERED)
-      .order('createdAt', { ascending: false });
-    if (ordersData) setOrders(ordersData);
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('*')
+        .neq('status', OrderStatus.DELIVERED)
+        .order('createdAt', { ascending: false });
+      if (ordersData) setOrders(ordersData);
 
-    const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
-    if (settingsData) setRestaurantSettings(settingsData);
+      const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
+      if (settingsData) setRestaurantSettings(settingsData);
+    } catch (err) {
+      console.error("Error al conectar con Supabase:", err);
+    }
   };
 
   useEffect(() => {
@@ -84,9 +87,8 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Analizar con IA cuando entramos al panel de administración
   useEffect(() => {
-    if (isStaffMode && activeView === 'admin' && orders.length > 0) {
+    if (isStaffMode && activeView === 'stats' && orders.length > 0) {
       getSmartSuggestions(menuItems, orders).then(setAiSuggestions);
     }
   }, [isStaffMode, activeView]);
@@ -111,7 +113,6 @@ const App: React.FC = () => {
       return [...prev, { ...item, quantity: 1 }];
     });
     
-    // IA Sugiere un acompañamiento si el carrito tiene pocos items
     if (cart.length < 2) {
       const suggestion = await generateUpsellSuggestion([item]);
       setUpsellHint(suggestion);
@@ -135,6 +136,8 @@ const App: React.FC = () => {
       setCart([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
+    } else {
+      alert("Error al enviar pedido: " + error.message);
     }
     setIsPaying(false);
   };
@@ -145,7 +148,6 @@ const App: React.FC = () => {
     await supabase.from('orders').update({ status: next }).eq('id', id);
   };
 
-  // Fix for "Cannot find name 'saveBranding'": Implement the saveBranding function.
   const saveBranding = async (name: string, logoUrl: string) => {
     const newSettings = { name, logoUrl };
     setRestaurantSettings(newSettings);
@@ -167,7 +169,7 @@ const App: React.FC = () => {
           <h1 className="text-xs font-black uppercase tracking-[0.2em] opacity-90 truncate">{restaurantSettings.name}</h1>
           <div className="mt-2 flex items-center justify-center gap-2">
              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-             <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Cloud Sync Active</span>
+             <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Nube Activa</span>
           </div>
         </div>
 
@@ -216,7 +218,7 @@ const App: React.FC = () => {
             </button>
             <div onClick={handleSecretClick} className="flex flex-col cursor-default select-none active:opacity-50">
                 <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina' : activeView === 'admin' ? 'Inventario' : 'Reportes IA') : restaurantSettings.name}
+                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina' : activeView === 'admin' ? 'Inventario' : 'IA Insights') : restaurantSettings.name}
                 </h2>
                 {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-[0.2em]">{activeCategory}</span>}
             </div>
@@ -267,7 +269,7 @@ const App: React.FC = () => {
                         onClick={() => addToCart(item)} 
                         className="mt-auto w-full py-3.5 bg-slate-50 group-hover:bg-slate-950 group-hover:text-white transition-all rounded-[1.5rem] font-black text-[10px] uppercase border border-slate-100"
                       >
-                        Añadir al Plato
+                        Añadir
                       </button>
                     </div>
                   </div>
@@ -306,7 +308,7 @@ const App: React.FC = () => {
                         onClick={() => updateStatus(order.id, order.status)}
                         className={`w-full py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-lg transition-all active:scale-95 ${order.status === OrderStatus.READY ? 'bg-emerald-600 text-white shadow-emerald-600/20' : 'bg-slate-950 text-white'}`}
                       >
-                        {order.status === OrderStatus.PENDING ? 'Cocinando' : order.status === OrderStatus.PREPARING ? 'Listo para Entrega' : 'Entregado ✓'}
+                        {order.status === OrderStatus.PENDING ? 'Cocinando' : order.status === OrderStatus.PREPARING ? 'Listo' : 'Entregado ✓'}
                       </button>
                     </div>
                   </div>
@@ -321,7 +323,7 @@ const App: React.FC = () => {
                   <div className="p-4 bg-orange-600 rounded-[2rem] text-white shadow-xl shadow-orange-600/30"><TrendingUp className="w-6 h-6" /></div>
                   <div>
                     <h3 className="text-2xl font-black italic uppercase tracking-tighter">Gemini <span className="text-orange-600 not-italic">Insights</span></h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Análisis estratégico en tiempo real</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Análisis estratégico</p>
                   </div>
                </div>
 
@@ -344,25 +346,23 @@ const App: React.FC = () => {
 
           {isStaffMode && activeView === 'admin' && (
             <div className="space-y-10 pb-20 animate-in fade-in">
-                {/* CONFIGURACIÓN BRANDING */}
                 <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-xl">
                     <div className="flex items-center gap-3 mb-8">
                         <Store className="w-6 h-6 text-orange-600" />
-                        <h4 className="text-xl font-black italic uppercase tracking-tighter">Branding del Local</h4>
+                        <h4 className="text-xl font-black italic uppercase tracking-tighter">Branding</h4>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-3">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre Comercial</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre</label>
                             <input type="text" value={restaurantSettings.name} onChange={e => saveBranding(e.target.value, restaurantSettings.logoUrl)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200" />
                         </div>
                         <div className="space-y-3">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">URL del Logotipo</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Logo URL</label>
                             <input type="text" value={restaurantSettings.logoUrl} onChange={e => saveBranding(restaurantSettings.name, e.target.value)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200" />
                         </div>
                     </div>
                 </div>
 
-                {/* GESTIÓN DE PRODUCTOS */}
                 <div className="flex justify-between items-center px-4">
                     <h4 className="text-xl font-black italic uppercase tracking-tighter">Carta de <span className="text-orange-600 not-italic">Platos</span></h4>
                     <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-950 text-white px-8 py-4 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">Añadir Nuevo</button>
@@ -399,16 +399,14 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* NAV MÓVIL (SOLO STAFF) */}
       {isStaffMode && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-2xl">
           <MobileNavItem icon={<ChefHat />} label="Cocina" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} />
           <MobileNavItem icon={<TrendingUp />} label="IA" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
           <MobileNavItem icon={<Settings />} label="Menú" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
         </nav>
       )}
 
-      {/* MODAL LOGIN */}
       {showLogin && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-12 text-center shadow-2xl animate-in zoom-in-95 duration-500">
@@ -430,10 +428,9 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* CARRITO MODAL */}
       {isCartOpen && (
         <div className="fixed inset-0 z-[200] flex justify-end">
-          <div className={`absolute inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-500 ${isCartOpen ? 'opacity-100' : 'opacity-0'}`} onClick={() => setIsCartOpen(false)} />
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
              <div className="p-8 border-b flex justify-between items-center pt-safe">
                 <h2 className="text-2xl font-black italic uppercase tracking-tighter">Mi <span className="text-orange-600 not-italic">Orden</span></h2>
@@ -462,34 +459,29 @@ const App: React.FC = () => {
                       </div>
                     ))}
                     <div className="pt-6 space-y-4">
-                        <div className="relative">
-                            <input type="text" placeholder="¿Cómo te llamas?" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-slate-200 transition-all shadow-inner" />
-                        </div>
-                        <div className="relative">
-                            <input type="text" placeholder="Número de Mesa" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-slate-200 transition-all shadow-inner" />
-                        </div>
+                        <input type="text" placeholder="¿Cómo te llamas?" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-slate-200 transition-all shadow-inner" />
+                        <input type="text" placeholder="Número de Mesa" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-slate-200 transition-all shadow-inner" />
                     </div>
                   </>
                 )}
              </div>
              <div className="p-10 border-t bg-white pb-safe">
                 <div className="flex justify-between items-end mb-8">
-                  <span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Total Final</span>
+                  <span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Total</span>
                   <span className="text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span>
                 </div>
                 <button 
                   onClick={handlePayment} 
                   disabled={cart.length === 0 || isPaying || !customerName}
-                  className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-[0_20px_40px_rgba(0,0,0,0.15)] transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}
+                  className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}
                 >
-                  {isPaying ? 'Procesando...' : paymentSuccess ? '¡Pedido Enviado!' : 'Confirmar Pedido'}
+                  {isPaying ? 'Enviando...' : paymentSuccess ? '¡Listo!' : 'Confirmar'}
                 </button>
              </div>
           </div>
         </div>
       )}
 
-      {/* FORMULARIO ADMIN */}
       {isAdminFormOpen && (
         <AdminForm 
           item={editingItem} 
@@ -515,7 +507,8 @@ const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
 
 const MobileNavItem = ({ icon, label, active, onClick }: any) => (
   <button onClick={onClick} className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${active ? 'text-orange-500 scale-110' : 'text-slate-500 opacity-50'}`}>
-    {React.cloneElement(icon as React.ReactElement, { className: 'w-6 h-6' })}
+    {/* Fixed: Added <any> to React.ReactElement cast to allow className property in cloneElement */}
+    {React.cloneElement(icon as React.ReactElement<any>, { className: 'w-6 h-6' })}
     <span className="text-[8px] font-black uppercase tracking-tighter leading-none">{label}</span>
   </button>
 );
@@ -528,31 +521,31 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
         <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-10 text-slate-950">{item ? 'Editar' : 'Nuevo'} <span className="text-orange-600 not-italic">Plato</span></h2>
         <div className="space-y-5">
             <div className="space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre del Plato</label>
-                <input type="text" placeholder="Ej: Burger Monster" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" />
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre</label>
+                <input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" />
             </div>
             <div className="flex gap-5">
               <div className="w-1/2 space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Precio ($)</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Precio</label>
                 <input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" />
               </div>
               <div className="w-1/2 space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Sección</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Categoría</label>
                 <select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-[10px] outline-none border border-slate-100 uppercase shadow-inner appearance-none">
                     {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
                 </select>
               </div>
             </div>
             <div className="space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Foto (URL)</label>
-                <input type="text" placeholder="https://..." value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">URL Imagen</label>
+                <input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
             </div>
             <div className="space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Descripción Gourmet</label>
-                <textarea placeholder="Cuéntanos más del plato..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-28 shadow-inner resize-none" />
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Descripción</label>
+                <textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-28 shadow-inner resize-none" />
             </div>
             <div className="pt-8 space-y-4">
-                <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl shadow-orange-600/30 active:scale-95 transition-all">Guardar Cambios</button>
+                <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar</button>
                 <button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Volver</button>
             </div>
         </div>

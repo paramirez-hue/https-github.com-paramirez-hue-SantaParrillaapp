@@ -1,11 +1,12 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Initialize the GoogleGenAI client using the process.env.API_KEY directly as required.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Guidelines suggest creating the instance right before the API call to ensure the latest API key from process.env.API_KEY is used.
 
 export const getSmartSuggestions = async (currentMenu: any[], currentOrders: any[]) => {
   try {
+    // Initializing right before use as per guidelines to handle potential dynamic API key updates.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     // Using gemini-3-pro-preview for complex strategic reasoning tasks as per guidelines.
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
@@ -39,6 +40,8 @@ export const getSmartSuggestions = async (currentMenu: any[], currentOrders: any
 
 export const generateUpsellSuggestion = async (cartItems: any[]) => {
   try {
+    // Initializing right before use as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     // Using gemini-3-flash-preview for a simpler text-based suggestion task.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
