@@ -11,11 +11,10 @@
   },
   "dependencies": {
     "@google/genai": "^1.37.0",
-    "firebase": "^10.8.0",
-    "lucide-react": "^0.454.0",
+    "lucide-react": "^0.562.0",
+    "@supabase/supabase-js": "^2.45.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "recharts": "^2.13.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -32,7 +32,7 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   customerName: string;
-  createdAt: number;
+  createdAt: string | number; // Soportamos string ISO de Supabase y number timestamp
   tableNumber?: string;
 }
 

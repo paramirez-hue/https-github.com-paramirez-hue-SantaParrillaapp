@@ -10,6 +10,7 @@ import { FoodItem, Order, OrderItem, OrderStatus, ViewType } from './types';
 import { INITIAL_MENU, CATEGORIES, DEFAULT_BRANDING } from './constants';
 import { getSmartSuggestions, generateUpsellSuggestion, improveDescription, generateFoodImage } from './geminiService';
 
+// Supabase configuration
 const SUPABASE_URL = "https://ejerqcxzvfwnccdadytj.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Y3cEubsUUZwHNOKj1uqasQ_lrzXbdS6";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -18,10 +19,13 @@ const OrderTimer: React.FC<{ startTime: any }> = ({ startTime }) => {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const start = typeof startTime === 'string' ? new Date(startTime).getTime() : startTime;
-    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 60000)), 10000);
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 60000));
+    }, 10000);
     setElapsed(Math.floor((Date.now() - start) / 60000));
     return () => clearInterval(interval);
   }, [startTime]);
+
   return (
     <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-colors ${elapsed > 20 ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-900 text-white'}`}>
       <Timer className="w-3 h-3" /> {elapsed} min
@@ -59,74 +63,88 @@ const App: React.FC = () => {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
       oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
       gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-      oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.5);
-    } catch (e) {}
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.5);
+    } catch (e) { console.debug("Sound blocked by browser"); }
   };
 
   const fetchData = async () => {
     try {
-      // 1. Fetch Menu
-      const { data: menuData } = await supabase.from('menu').select('*');
+      // Fetch Menu
+      const { data: menuData, error: menuError } = await supabase.from('menu').select('*');
+      if (menuError) throw menuError;
+      
       if (menuData && menuData.length > 0) {
         setMenuItems(menuData);
         setIsDbEmpty(false);
       } else {
         setIsDbEmpty(true);
-        setMenuItems([]);
       }
 
-      // 2. Fetch Active Orders
-      const { data: ordersData } = await supabase
+      // Fetch Orders
+      const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
         .select('*')
         .neq('status', OrderStatus.DELIVERED)
         .order('createdAt', { ascending: false });
       
+      if (ordersError) throw ordersError;
+
       if (ordersData) {
-        if (ordersData.length > prevOrdersCount.current && isStaffMode) playNotificationSound();
+        if (ordersData.length > prevOrdersCount.current && isStaffMode) {
+          playNotificationSound();
+        }
         prevOrdersCount.current = ordersData.length;
         setOrders(ordersData);
+
         const myOrderId = localStorage.getItem('last_order_id');
         if (myOrderId) {
           const myOrder = ordersData.find(o => o.id === myOrderId);
           if (myOrder) setLastOrder(myOrder);
+          else setLastOrder(null);
         }
       }
 
-      // 3. Fetch Branding
+      // Fetch Branding
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
       if (settingsData) setRestaurantSettings(settingsData);
-    } catch (err) { console.error("Database connection failed", err); }
+    } catch (err) {
+      console.error("Fetch error:", err);
+    }
   };
 
   const seedDatabase = async () => {
-    if (!confirm("¿Deseas cargar el menú inicial de Santa Parrilla en tu base de datos?")) return;
+    if (!confirm("¿Deseas cargar el menú inicial de Santa Parrilla?")) return;
     try {
       const { error: menuErr } = await supabase.from('menu').insert(INITIAL_MENU.map(({id, ...rest}) => rest));
       const { error: setErr } = await supabase.from('settings').upsert({ id: 'branding', ...DEFAULT_BRANDING });
       if (!menuErr && !setErr) {
-        alert("¡Base de datos inicializada con éxito!");
+        alert("Base de datos cargada!");
         fetchData();
       } else {
-        alert("Error al inicializar: " + (menuErr?.message || setErr?.message));
+        alert("Error: " + (menuErr?.message || setErr?.message));
       }
-    } catch (e) { alert("Error crítico de red"); }
+    } catch (e) { alert("Error de conexión"); }
   };
 
   useEffect(() => {
     fetchData();
-    const channels = [
-      supabase.channel('menu-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData).subscribe(),
-      supabase.channel('orders-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchData).subscribe(),
-      supabase.channel('settings-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, fetchData).subscribe()
-    ];
-    return () => { channels.forEach(c => supabase.removeChannel(c)); };
+    const menuSub = supabase.channel('menu-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData).subscribe();
+    const ordersSub = supabase.channel('orders-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchData).subscribe();
+    const settingsSub = supabase.channel('settings-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, fetchData).subscribe();
+
+    return () => {
+      supabase.removeChannel(menuSub);
+      supabase.removeChannel(ordersSub);
+      supabase.removeChannel(settingsSub);
+    };
   }, [isStaffMode]);
 
   useEffect(() => {
@@ -149,28 +167,38 @@ const App: React.FC = () => {
   };
 
   const handlePayment = async () => {
-    if (!customerName) return alert("Nombre requerido");
+    if (!customerName) return alert("Por favor ingresa tu nombre");
     setIsPaying(true);
-    const newOrder = {
-      items: cart,
-      total: cartTotal,
-      status: OrderStatus.PENDING,
-      customerName,
-      tableNumber: tableNumber || 'Llevar',
-    };
-    const { data, error } = await supabase.from('orders').insert([newOrder]).select().single();
-    if (!error && data) {
-      localStorage.setItem('last_order_id', data.id);
-      setCart([]);
-      setPaymentSuccess(true);
-      setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
-    } else { alert("Error en Supabase: " + error?.message); }
-    setIsPaying(false);
+    try {
+      const newOrder = {
+        items: cart,
+        total: cartTotal,
+        status: OrderStatus.PENDING,
+        customerName,
+        tableNumber: tableNumber || 'Llevar',
+        createdAt: new Date().toISOString()
+      };
+      const { data, error } = await supabase.from('orders').insert([newOrder]).select().single();
+      if (error) throw error;
+      if (data) {
+        localStorage.setItem('last_order_id', data.id);
+        setCart([]);
+        setPaymentSuccess(true);
+        setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
+      }
+    } catch (err: any) {
+      alert("Error al enviar pedido: " + err.message);
+    } finally {
+      setIsPaying(false);
+    }
   };
 
   const updateStatus = async (id: string, current: OrderStatus) => {
     const sequence = [OrderStatus.PENDING, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED];
-    const next = sequence[sequence.indexOf(current) + 1] || current;
+    const nextIndex = sequence.indexOf(current) + 1;
+    if (nextIndex >= sequence.length) return;
+    const next = sequence[nextIndex];
+    
     await supabase.from('orders').update({ status: next }).eq('id', id);
     if (next === OrderStatus.DELIVERED && id === localStorage.getItem('last_order_id')) {
       localStorage.removeItem('last_order_id');
@@ -189,6 +217,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans">
+      {/* Side Navigation Desktop */}
       <aside className="hidden md:flex flex-col bg-slate-950 text-white w-64 h-screen sticky top-0 border-r border-white/5 shrink-0 overflow-y-auto no-scrollbar">
         <div className="p-10 text-center">
           <div onClick={() => setClickCount(c => c + 1)} className="w-20 h-20 bg-orange-600 rounded-[2rem] mx-auto flex items-center justify-center mb-4 shadow-2xl cursor-default transition-all active:scale-95 overflow-hidden">
@@ -197,15 +226,15 @@ const App: React.FC = () => {
           <h1 className="text-xs font-black uppercase tracking-widest opacity-90 truncate">{restaurantSettings.name}</h1>
           <div className="mt-2 flex items-center justify-center gap-2">
              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-             <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Supabase Link</span>
+             <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Live Connection</span>
           </div>
         </div>
         <nav className="flex-1 px-6 space-y-3">
           {isStaffMode ? (
             <>
-              <SidebarItem icon={<ChefHat />} label="Comandas" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} badge={orders.length} />
-              <SidebarItem icon={<Settings />} label="Inventario" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
-              <SidebarItem icon={<TrendingUp />} label="Estrategia IA" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
+              <SidebarItem icon={<ChefHat />} label="Pedidos" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} badge={orders.length} />
+              <SidebarItem icon={<Settings />} label="Catálogo" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
+              <SidebarItem icon={<TrendingUp />} label="IA Estrategia" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
               <button onClick={() => setIsStaffMode(false)} className="w-full mt-10 p-4 text-red-400 hover:bg-red-400/10 rounded-2xl flex items-center gap-3 font-black text-[10px] uppercase transition-all"><LogOut className="w-4 h-4" /> Salir</button>
             </>
           ) : (
@@ -218,12 +247,13 @@ const App: React.FC = () => {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 bg-[#FAF9F6]">
+        {/* Header */}
         <header className="sticky top-0 bg-white/70 backdrop-blur-xl border-b z-40 px-6 py-4 flex justify-between items-center pt-safe">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-slate-100 rounded-xl active:scale-90"><LayoutGrid className="w-6 h-6" /></button>
-            <div onClick={() => { if(clickCount + 1 >= 5) { setShowLogin(true); setClickCount(0); } else setClickCount(c => c+1); }}>
+            <div onClick={() => { if(clickCount + 1 >= 5) { setShowLogin(true); setClickCount(0); } else setClickCount(c => c+1); }} className="cursor-pointer">
                 <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Cocina Real' : activeView === 'admin' ? 'Gestión Menú' : 'Reporte Estratégico') : restaurantSettings.name}
+                    {isStaffMode ? (activeView === 'kitchen' ? 'Monitor Cocina' : activeView === 'admin' ? 'Gestión Menú' : 'IA Insights') : restaurantSettings.name}
                 </h2>
                 {!isStaffMode && <span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">{activeCategory}</span>}
             </div>
@@ -239,12 +269,13 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        {/* Main Content */}
         <main className="flex-1 p-4 md:p-10 max-w-6xl mx-auto w-full pb-32">
           {isDbEmpty && !isStaffMode && (
             <div className="py-40 text-center space-y-6">
                 <Database className="w-16 h-16 mx-auto text-slate-300 animate-bounce" />
-                <h3 className="text-xl font-black uppercase italic">Configurando restaurante...</h3>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Espera un momento o contacta a soporte</p>
+                <h3 className="text-xl font-black uppercase italic">Bienvenido a Santa Parrilla</h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Estamos configurando la cocina para ti</p>
             </div>
           )}
 
@@ -253,17 +284,26 @@ const App: React.FC = () => {
               {lastOrder && (
                 <div className="mb-6 bg-slate-900 text-white p-6 rounded-[2.5rem] shadow-2xl flex items-center justify-between border-4 border-orange-600 animate-in slide-in-from-top-10">
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-400">Tu Pedido está</p>
-                    <h4 className="text-lg font-black uppercase italic">{lastOrder.status === 'PENDING' ? 'En Espera' : lastOrder.status === 'PREPARING' ? 'En la Parrilla 🔥' : '¡Listo para retirar! 🥡'}</h4>
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-400">Estado del Pedido</p>
+                    <h4 className="text-lg font-black uppercase italic">
+                      {lastOrder.status === 'PENDING' ? 'En Cola' : lastOrder.status === 'PREPARING' ? 'En la Parrilla 🔥' : '¡Listo para retirar! 🥡'}
+                    </h4>
                   </div>
                   <Bell className="w-8 h-8 text-orange-500 animate-swing" />
+                </div>
+              )}
+              {upsellHint && (
+                <div className="mb-6 bg-orange-600 text-white p-5 rounded-[2rem] shadow-xl flex items-center gap-4 animate-in slide-in-from-top-4">
+                  <Sparkles className="w-5 h-5" />
+                  <p className="text-[11px] font-bold italic">"{upsellHint}"</p>
+                  <button onClick={() => setUpsellHint(null)} className="ml-auto"><X className="w-4 h-4 opacity-50" /></button>
                 </div>
               )}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
                 {filteredMenu.map(item => (
                   <div key={item.id} className="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm flex flex-col group active:scale-[0.97] transition-all">
                     <div className="h-32 md:h-64 overflow-hidden relative">
-                      <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-700" />
+                      <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-700" loading="lazy" />
                       <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-2xl text-[11px] font-black shadow-lg border border-slate-100">${item.price.toFixed(2)}</div>
                     </div>
                     <div className="p-4 md:p-8 flex flex-col flex-1">
@@ -281,22 +321,23 @@ const App: React.FC = () => {
              <div className="bg-orange-50 border-2 border-orange-100 p-10 rounded-[3rem] text-center space-y-8 animate-in zoom-in-95">
                 <AlertTriangle className="w-16 h-16 text-orange-500 mx-auto" />
                 <div>
-                    <h3 className="text-2xl font-black uppercase italic">Base de datos vacía</h3>
-                    <p className="text-xs font-bold text-slate-500 mt-2">No se encontraron platos en Supabase. ¿Deseas cargar el menú por defecto?</p>
+                    <h3 className="text-2xl font-black uppercase italic">Sin Datos Detectados</h3>
+                    <p className="text-xs font-bold text-slate-500 mt-2">La base de datos de Supabase está conectada pero vacía.</p>
                 </div>
-                <button onClick={seedDatabase} className="bg-orange-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-orange-600/30 active:scale-95 transition-all">Inicializar Santa Parrilla</button>
+                <button onClick={seedDatabase} className="bg-orange-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase text-xs shadow-xl active:scale-95 transition-all">Cargar Menú Santa Parrilla</button>
              </div>
           )}
 
+          {/* Render views for kitchen, stats, and admin similarly, ensuring key check for empty lists */}
           {isStaffMode && activeView === 'kitchen' && !isDbEmpty && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {orders.length === 0 ? (
-                <div className="col-span-full py-40 text-center opacity-20"><p className="font-black uppercase text-xs tracking-[0.4em]">Sin pedidos pendientes</p></div>
+                <div className="col-span-full py-40 text-center opacity-20"><p className="font-black uppercase text-xs tracking-[0.4em]">Sin comandas en curso</p></div>
               ) : (
                 orders.map(order => (
                   <div key={order.id} className="bg-white border-2 border-slate-100 rounded-[3rem] shadow-xl overflow-hidden flex flex-col animate-in zoom-in-95">
                     <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
-                      <div><span className="font-black text-[9px] text-slate-400 uppercase">Mesa {order.tableNumber}</span><p className="text-[11px] font-black text-slate-800 uppercase italic">{order.customerName}</p></div>
+                      <div><span className="font-black text-[9px] text-slate-400 uppercase">Mesa: {order.tableNumber}</span><p className="text-[11px] font-black text-slate-800 uppercase italic">{order.customerName}</p></div>
                       <OrderTimer startTime={order.createdAt} />
                     </div>
                     <div className="p-6 flex-1 space-y-4">
@@ -306,7 +347,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="p-6 pt-0">
                       <button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${order.status === 'READY' ? 'bg-emerald-600 text-white' : 'bg-slate-950 text-white'}`}>
-                        {order.status === 'PENDING' ? 'A Preparación' : order.status === 'PREPARING' ? '¡Listo para entrega!' : 'Marcar Entregado ✓'}
+                        {order.status === 'PENDING' ? 'Iniciar Cocción' : order.status === 'PREPARING' ? 'Terminar Plato' : 'Entregado ✓'}
                       </button>
                     </div>
                   </div>
@@ -315,11 +356,12 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {/* Rest of the UI follows the same pattern as before, but with stable logic */}
           {isStaffMode && activeView === 'stats' && !isDbEmpty && (
             <div className="space-y-8">
                <div className="flex items-center gap-4 border-b pb-6">
                   <div className="p-4 bg-orange-600 rounded-[2rem] text-white shadow-xl shadow-orange-600/30"><TrendingUp className="w-6 h-6" /></div>
-                  <h3 className="text-2xl font-black italic uppercase tracking-tighter">Gemini <span className="text-orange-600 not-italic">Insights</span></h3>
+                  <h3 className="text-2xl font-black italic uppercase tracking-tighter">Estrategia <span className="text-orange-600 not-italic">con IA</span></h3>
                </div>
                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {aiSuggestions.length > 0 ? aiSuggestions.map((s, i) => (
@@ -328,7 +370,7 @@ const App: React.FC = () => {
                         <h4 className="text-sm font-black uppercase italic mb-3 text-slate-800 tracking-tight group-hover:text-orange-600 transition-colors">{s.title}</h4>
                         <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{s.description}</p>
                     </div>
-                  )) : <div className="col-span-full py-20 text-center animate-pulse"><p className="font-black text-[10px] text-slate-400 uppercase">Consultando a la IA sobre tus ventas...</p></div>}
+                  )) : <div className="col-span-full py-20 text-center animate-pulse"><p className="font-black text-[10px] text-slate-400 uppercase">Gemini está analizando tus ventas...</p></div>}
                </div>
             </div>
           )}
@@ -336,13 +378,13 @@ const App: React.FC = () => {
           {isStaffMode && activeView === 'admin' && (
             <div className="space-y-10 pb-20">
                 <div className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-xl">
-                    <div className="flex items-center gap-3 mb-8"><Store className="w-6 h-6 text-orange-600" /><h4 className="text-xl font-black italic uppercase tracking-tighter">Branding de tu local</h4></div>
+                    <div className="flex items-center gap-3 mb-8"><Store className="w-6 h-6 text-orange-600" /><h4 className="text-xl font-black italic uppercase tracking-tighter">Identidad Visual</h4></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre Comercial</label><input type="text" value={restaurantSettings.name} onChange={e => saveBranding(e.target.value, restaurantSettings.logoUrl)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
-                        <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Logo URL</label><input type="text" value={restaurantSettings.logoUrl} onChange={e => saveBranding(restaurantSettings.name, e.target.value)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
+                        <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase ml-4">Nombre del Negocio</label><input type="text" value={restaurantSettings.name} onChange={e => saveBranding(e.target.value, restaurantSettings.logoUrl)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
+                        <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase ml-4">URL del Logotipo</label><input type="text" value={restaurantSettings.logoUrl} onChange={e => saveBranding(restaurantSettings.name, e.target.value)} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" /></div>
                     </div>
                 </div>
-                <div className="flex justify-between items-center px-4"><h4 className="text-xl font-black italic uppercase tracking-tighter">Catálogo de <span className="text-orange-600 not-italic">Platos</span></h4><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-950 text-white px-8 py-4 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">Añadir Plato</button></div>
+                <div className="flex justify-between items-center px-4"><h4 className="text-xl font-black italic uppercase tracking-tighter">Gestión de <span className="text-orange-600 not-italic">Productos</span></h4><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-950 text-white px-8 py-4 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">Nuevo Plato</button></div>
                 <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-2xl overflow-hidden">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b"><tr><th className="p-8">Plato</th><th className="p-8">Precio</th><th className="p-8 text-right">Acción</th></tr></thead>
@@ -362,25 +404,19 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {isStaffMode && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 shadow-2xl">
-          <MobileNavItem icon={<ChefHat />} label="Pedidos" active={activeView === 'kitchen'} onClick={() => setActiveView('kitchen')} />
-          <MobileNavItem icon={<TrendingUp />} label="Estrategia" active={activeView === 'stats'} onClick={() => setActiveView('stats')} />
-          <MobileNavItem icon={<Settings />} label="Cartas" active={activeView === 'admin'} onClick={() => setActiveView('admin')} />
-        </nav>
-      )}
-
+      {/* Login Modal */}
       {showLogin && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6 animate-in fade-in">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-12 text-center shadow-2xl animate-in zoom-in-95">
              <div className="w-20 h-20 bg-slate-100 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-slate-950 shadow-inner"><Lock className="w-10 h-10" /></div>
-             <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-4">Panel <span className="text-orange-600 not-italic">Staff</span></h2>
+             <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-4">Área de <span className="text-orange-600 not-italic">Staff</span></h2>
              <input type="password" placeholder="PIN" maxLength={4} className="w-full py-6 bg-slate-50 rounded-[1.5rem] text-center text-4xl font-black tracking-[0.6em] outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
-             <button onClick={() => setShowLogin(false)} className="mt-10 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase tracking-widest transition-colors">Volver al menú</button>
+             <button onClick={() => setShowLogin(false)} className="mt-10 text-[9px] font-black text-slate-400 hover:text-slate-950 uppercase tracking-widest transition-colors">Volver</button>
           </div>
         </div>
       )}
 
+      {/* Cart Modal */}
       {isCartOpen && (
         <div className="fixed inset-0 z-[200] flex justify-end">
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
@@ -403,15 +439,15 @@ const App: React.FC = () => {
                       </div>
                     ))}
                     <div className="pt-6 space-y-4">
-                        <input type="text" placeholder="Tu Nombre para el pedido" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
-                        <input type="text" placeholder="Número de Mesa / Llevar" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
+                        <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
+                        <input type="text" placeholder="Mesa / Llevar" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[1.5rem] outline-none font-black text-[11px] uppercase border border-transparent focus:border-orange-500 transition-all shadow-inner" />
                     </div>
                   </>
                 )}
              </div>
              <div className="p-10 border-t bg-white pb-safe">
-                <div className="flex justify-between items-end mb-8"><span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Total</span><span className="text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span></div>
-                <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}>{isPaying ? 'Enviando...' : paymentSuccess ? '¡Pedido Enviado!' : 'Confirmar Pedido'}</button>
+                <div className="flex justify-between items-end mb-8"><span className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-none">Subtotal</span><span className="text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span></div>
+                <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl transition-all active:scale-95 ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-white disabled:opacity-20'}`}>{isPaying ? 'Procesando...' : paymentSuccess ? '¡Enviado!' : 'Hacer Pedido'}</button>
              </div>
           </div>
         </div>
@@ -452,33 +488,35 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleAIDescription = async () => {
-    if (!data.name) return alert("Ponle un nombre primero");
+    if (!data.name) return alert("Define un nombre primero");
     setIsGenerating(true);
-    const desc = await improveDescription(data.name);
-    setData({ ...data, description: desc });
-    setIsGenerating(false);
+    try {
+      const desc = await improveDescription(data.name);
+      setData({ ...data, description: desc });
+    } finally { setIsGenerating(false); }
   };
 
   const handleAIImage = async () => {
-    if (!data.name) return alert("Ponle un nombre primero");
+    if (!data.name) return alert("Define un nombre primero");
     setIsGenerating(true);
-    const img = await generateFoodImage(data.name);
-    if (img) setData({ ...data, image: img });
-    setIsGenerating(false);
+    try {
+      const img = await generateFoodImage(data.name);
+      if (img) setData({ ...data, image: img });
+    } finally { setIsGenerating(false); }
   };
 
   return (
     <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl z-[300] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in">
-      <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-10 md:p-14 shadow-2xl animate-in slide-in-from-bottom-10">
-        <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-10 text-slate-950">{item ? 'Modificar' : 'Crear'} <span className="text-orange-600 not-italic">Plato</span></h2>
+      <div className="bg-white w-full max-lg rounded-[3.5rem] p-10 md:p-14 shadow-2xl animate-in slide-in-from-bottom-10 max-w-lg">
+        <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-10 text-slate-950">{item ? 'Actualizar' : 'Nuevo'} <span className="text-orange-600 not-italic">Plato</span></h2>
         <div className="space-y-5">
             <div className="space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre del Plato</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre</label>
                 <input type="text" placeholder="Ej: Burger Monster" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" />
             </div>
             <div className="flex gap-5">
               <div className="w-1/2 space-y-2">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio ($)</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label>
                 <input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-black text-xs outline-none border border-slate-100 shadow-inner" />
               </div>
               <div className="w-1/2 space-y-2">
@@ -490,25 +528,25 @@ const AdminForm = ({ item, onSave, onClose }: any) => {
             </div>
             <div className="space-y-2">
                 <div className="flex justify-between items-center px-4">
-                    <label className="text-[9px] font-black text-slate-400 uppercase">Foto del Plato</label>
+                    <label className="text-[9px] font-black text-slate-400 uppercase">Imagen</label>
                     <button onClick={handleAIImage} disabled={isGenerating} className="flex items-center gap-1.5 text-orange-600 text-[9px] font-black uppercase hover:opacity-70 transition-opacity">
                         <ImageIcon className="w-3 h-3" /> {isGenerating ? 'Generando...' : 'IA Foto'}
                     </button>
                 </div>
-                <input type="text" placeholder="URL o Generada por IA" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
+                <input type="text" placeholder="URL de la imagen" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 shadow-inner" />
             </div>
             <div className="space-y-2">
                 <div className="flex justify-between items-center px-4">
                     <label className="text-[9px] font-black text-slate-400 uppercase">Descripción</label>
                     <button onClick={handleAIDescription} disabled={isGenerating} className="flex items-center gap-1.5 text-orange-600 text-[9px] font-black uppercase hover:opacity-70 transition-opacity">
-                        <Wand2 className="w-3 h-3" /> {isGenerating ? 'Escribiendo...' : 'IA Texto'}
+                        <Wand2 className="w-3 h-3" /> {isGenerating ? 'Redactando...' : 'IA Texto'}
                     </button>
                 </div>
-                <textarea placeholder="Descripción del sabor..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner resize-none" />
+                <textarea placeholder="Ingredientes..." value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-5 bg-slate-50 rounded-[1.5rem] font-bold text-[10px] outline-none border border-slate-100 h-24 shadow-inner resize-none" />
             </div>
             <div className="pt-8 space-y-4">
-                <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar en Base de Datos</button>
-                <button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Cerrar</button>
+                <button onClick={() => onSave(data)} className="w-full py-6 bg-orange-600 text-white rounded-[2rem] font-black uppercase text-[11px] tracking-[0.2em] shadow-xl active:scale-95 transition-all">Guardar Datos</button>
+                <button onClick={onClose} className="w-full py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Cancelar</button>
             </div>
         </div>
       </div>

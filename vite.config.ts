@@ -5,12 +5,19 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Esto asegura que process.env funcione en el navegador
-    'process.env': process.env,
-    'global': {}
+    // Definimos específicamente la API_KEY para evitar serializar todo el objeto process.env
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    'global': 'window'
   },
   build: {
     outDir: 'dist',
-    sourcemap: false
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'lucide-react', '@supabase/supabase-js']
+        }
+      }
+    }
   }
 });
