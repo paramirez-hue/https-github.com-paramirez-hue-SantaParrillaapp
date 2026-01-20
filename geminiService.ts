@@ -1,13 +1,9 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Guidelines suggest creating the instance right before the API call to ensure the latest API key from process.env.API_KEY is used.
-
 export const getSmartSuggestions = async (currentMenu: any[], currentOrders: any[]) => {
   try {
-    // Initializing right before use as per guidelines to handle potential dynamic API key updates.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    // Using gemini-3-pro-preview for complex strategic reasoning tasks as per guidelines.
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: `Analiza el siguiente menú y pedidos actuales para dar 3 consejos estratégicos de ventas o gestión para hoy.
@@ -29,8 +25,6 @@ export const getSmartSuggestions = async (currentMenu: any[], currentOrders: any
         }
       }
     });
-
-    // Extract text property directly from the response (property, not a method).
     return JSON.parse(response.text || '[]');
   } catch (error) {
     console.error("Error in Gemini service:", error);
@@ -40,17 +34,51 @@ export const getSmartSuggestions = async (currentMenu: any[], currentOrders: any
 
 export const generateUpsellSuggestion = async (cartItems: any[]) => {
   try {
-    // Initializing right before use as per guidelines.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    // Using gemini-3-flash-preview for a simpler text-based suggestion task.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Basado en estos productos en el carrito: ${JSON.stringify(cartItems)}, sugiere un producto adicional que combine bien para aumentar el ticket promedio. Responde solo con el nombre del producto y una breve razón.`,
+      contents: `Basado en estos productos: ${JSON.stringify(cartItems)}, sugiere un producto adicional. Responde solo con el nombre y una breve razón.`,
     });
-    // Use .text property directly.
     return response.text || null;
   } catch (error) {
-    console.error("Error in Gemini upsell service:", error);
+    return null;
+  }
+};
+
+export const improveDescription = async (foodName: string) => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Redacta una descripción corta, irresistible y gourmet para un plato llamado "${foodName}". Máximo 15 palabras.`,
+    });
+    return response.text?.trim() || "";
+  } catch (error) {
+    return "";
+  }
+};
+
+export const generateFoodImage = async (foodName: string) => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ text: `A high-quality professional food photography of a ${foodName} served on a plate, warm lighting, restaurant style, 4k, bokeh background.` }]
+      },
+      config: {
+        imageConfig: { aspectRatio: "4:3" }
+      }
+    });
+    
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Error generating image:", error);
     return null;
   }
 };
