@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
-  UtensilsCrossed, Timer, ShoppingBasket, Edit2, Lock, LogOut, 
+  UtensilsCrossed, Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
   Settings, Store, LayoutGrid, Sparkles, TrendingUp, Bell, Image as ImageIcon, Wand2, Database, AlertTriangle, CloudOff, ChevronRight, Save, Check, PlusCircle, Info, Upload, Camera
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
@@ -117,6 +117,22 @@ const App: React.FC = () => {
       console.error("Error branding:", err.message);
     } finally {
       setIsSavingBranding(false);
+    }
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar este plato? Esta acción no se puede deshacer.")) return;
+    
+    try {
+      const { error } = await supabase.from('menu').delete().eq('id', id);
+      if (error) {
+        if (error.message.includes('row-level security')) setRlsErrorVisible(true);
+        throw error;
+      }
+      fetchData();
+    } catch (err: any) {
+      console.warn("Error eliminando en la nube, borrando localmente:", err.message);
+      setMenuItems(prev => prev.filter(item => item.id !== id));
     }
   };
 
@@ -376,9 +392,14 @@ const App: React.FC = () => {
                         <h5 className="font-black uppercase text-sm italic mb-1 line-clamp-1">{item.name}</h5>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p>
                       </div>
-                      <button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-5 bg-slate-100 text-slate-400 hover:text-slate-950 hover:bg-white hover:shadow-lg rounded-2xl transition-all active:scale-90">
-                        <Edit2 className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-4 bg-slate-100 text-slate-400 hover:text-slate-950 hover:bg-white hover:shadow-lg rounded-2xl transition-all active:scale-90 border border-transparent hover:border-slate-100">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleDeleteItem(item.id)} className="p-4 bg-red-50 text-red-400 hover:text-white hover:bg-red-500 hover:shadow-lg hover:shadow-red-500/20 rounded-2xl transition-all active:scale-90 border border-transparent">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
