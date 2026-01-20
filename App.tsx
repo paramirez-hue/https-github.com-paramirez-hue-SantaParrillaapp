@@ -7,7 +7,7 @@ import {
   AlertCircle, CheckCircle2, Info, Image as ImageIcon, Save, Menu as MenuIcon
 } from 'lucide-react';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, PaymentStatus } from './types';
-import { INITIAL_MENU, CATEGORIES } from './constants';
+import { INITIAL_MENU, CATEGORIES, DEFAULT_BRANDING } from './constants';
 import { getSmartSuggestions } from './geminiService';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
@@ -61,33 +61,28 @@ const App: React.FC = () => {
   const [customerName, setCustomerName] = useState('');
   const [tableNumber, setTableNumber] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   
-  // Estados para personalización del negocio
-  const [restaurantSettings, setRestaurantSettings] = useState({
-    name: 'Santa Parrilla',
-    logoUrl: ''
-  });
+  // Estados para personalización del negocio con valores por defecto fijos
+  const [restaurantSettings, setRestaurantSettings] = useState(DEFAULT_BRANDING);
 
   useEffect(() => {
     if (isFirebaseEnabled && db) {
-      // Sincronizar Menú
       const unsubMenu = onSnapshot(collection(db, "menu"), (snapshot) => {
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FoodItem[];
         setMenuItems(items.length > 0 ? items : INITIAL_MENU);
       });
-      // Sincronizar Pedidos
       const unsubOrders = onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snapshot) => {
         const o = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Order[];
         setOrders(o);
       });
-      // Sincronizar Configuración
       const unsubSettings = onSnapshot(doc(db, "settings", "branding"), (snapshot) => {
         if (snapshot.exists()) {
-          setRestaurantSettings(snapshot.data() as any);
+          setRestaurantSettings(prev => ({ ...prev, ...snapshot.data() }));
         }
       });
       return () => { unsubMenu(); unsubOrders(); unsubSettings(); };
@@ -97,12 +92,12 @@ const App: React.FC = () => {
       const savedOrders = localStorage.getItem('santa_orders');
       setOrders(savedOrders ? JSON.parse(savedOrders) : []);
       const savedSettings = localStorage.getItem('santa_settings');
-      if (savedSettings) setRestaurantSettings(JSON.parse(savedSettings));
+      if (savedSettings) setRestaurantSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
     }
   }, []);
 
   const saveBranding = async (newName: string, newLogo: string) => {
-    const newSettings = { name: newName, logoUrl: newLogo };
+    const newSettings = { name: newName || DEFAULT_BRANDING.name, logoUrl: newLogo || DEFAULT_BRANDING.logoUrl };
     setRestaurantSettings(newSettings);
     if (isFirebaseEnabled && db) {
       await setDoc(doc(db, "settings", "branding"), newSettings);
@@ -163,7 +158,7 @@ const App: React.FC = () => {
   const filteredMenu = activeCategory === 'Todas' ? menuItems : menuItems.filter(i => i.category === activeCategory);
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#FAF9F6] text-slate-900 font-sans">
+    <div className="min-h-screen flex flex-col md:flex-row bg-[#FAF9F6] text-slate-900 font-sans overflow-x-hidden">
       
       {/* SIDEBAR DESKTOP */}
       <nav className="hidden md:flex flex-col bg-slate-950 text-white sticky top-0 h-screen w-64 border-r border-white/10 shrink-0">
@@ -175,7 +170,7 @@ const App: React.FC = () => {
                 <UtensilsCrossed className="w-8 h-8" />
             )}
           </div>
-          <h1 className="text-sm font-black uppercase tracking-widest truncate">{restaurantSettings.name}</h1>
+          <h1 className="text-sm font-black uppercase tracking-widest truncate px-2">{restaurantSettings.name}</h1>
           <p className="text-[8px] font-bold text-slate-500 uppercase mt-1">Management System</p>
         </div>
         
@@ -204,30 +199,65 @@ const App: React.FC = () => {
             </>
           )}
         </div>
-
-        <div className="p-6 border-t border-white/5 flex flex-col items-center gap-2">
-           <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isFirebaseEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-              <span className="text-[8px] font-black text-slate-500 uppercase">{isFirebaseEnabled ? 'En Línea (Cloud)' : 'Local (Offline)'}</span>
-           </div>
-        </div>
       </nav>
+
+      {/* MOBILE SIDEBAR (DRAWER) */}
+      <div className={`fixed inset-0 z-[100] transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
+          <div className={`absolute top-0 left-0 h-full w-4/5 max-w-sm bg-slate-950 text-white p-8 transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+              <div className="flex justify-between items-center mb-10">
+                  <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
+                          {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <UtensilsCrossed className="w-5 h-5 text-white" />}
+                      </div>
+                      <span className="font-black text-xs uppercase tracking-widest truncate max-w-[120px]">{restaurantSettings.name}</span>
+                  </div>
+                  <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
+              </div>
+
+              <div className="space-y-4">
+                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Navegación</p>
+                  <SidebarItem 
+                    icon={<LayoutGrid />} 
+                    label="Todas las Categorías" 
+                    active={activeCategory === 'Todas'} 
+                    onClick={() => { setActiveCategory('Todas'); setIsMobileMenuOpen(false); }} 
+                  />
+                  {CATEGORIES.map(c => (
+                    <SidebarItem 
+                        key={c.id} 
+                        icon={<span>{c.icon}</span>} 
+                        label={c.id} 
+                        active={activeCategory === c.id} 
+                        onClick={() => { setActiveCategory(c.id); setIsMobileMenuOpen(false); }} 
+                    />
+                  ))}
+                  
+                  <div className="pt-10 border-t border-white/10 mt-10">
+                    <button onClick={() => { setIsMobileMenuOpen(false); setShowLogin(true); }} className="w-full p-4 bg-white/5 rounded-2xl flex items-center gap-4 text-orange-500 font-black text-[10px] uppercase">
+                        <Lock className="w-5 h-5" /> Acceso Administrativo
+                    </button>
+                  </div>
+              </div>
+          </div>
+      </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 bg-white/80 backdrop-blur-md border-b z-40 px-6 py-4 flex justify-between items-center shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="md:hidden w-8 h-8 rounded-lg overflow-hidden shrink-0">
-                {restaurantSettings.logoUrl ? (
-                    <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" />
-                ) : (
-                    <div className="w-full h-full bg-orange-600 flex items-center justify-center text-white"><UtensilsCrossed className="w-4 h-4" /></div>
-                )}
-            </div>
-            <div className="flex flex-col">
-                <h2 className="text-sm md:text-lg font-black uppercase tracking-tight leading-none truncate max-w-[150px] md:max-w-none">
-                    {isStaffMode ? (activeView === 'kitchen' ? 'Monitor de Cocina' : 'Administración') : restaurantSettings.name}
-                </h2>
-                {!isStaffMode && <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest mt-1">{activeCategory}</span>}
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 bg-slate-100 rounded-xl text-slate-600 active:scale-95 transition-all">
+                <MenuIcon className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3">
+                <div className="hidden md:block w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                    {restaurantSettings.logoUrl && <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" />}
+                </div>
+                <div className="flex flex-col">
+                    <h2 className="text-sm md:text-lg font-black uppercase tracking-tight leading-none truncate max-w-[140px] md:max-w-none">
+                        {isStaffMode ? (activeView === 'kitchen' ? 'Monitor de Cocina' : 'Administración') : restaurantSettings.name}
+                    </h2>
+                    {!isStaffMode && <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest mt-1">{activeCategory}</span>}
+                </div>
             </div>
           </div>
           {!isStaffMode && (
@@ -238,27 +268,6 @@ const App: React.FC = () => {
             </button>
           )}
         </header>
-
-        {/* SELECTOR DE CATEGORÍAS MÓVIL (HORIZONTAL) */}
-        {!isStaffMode && activeView === 'menu' && (
-            <div className="md:hidden bg-white border-b overflow-x-auto no-scrollbar flex items-center gap-2 px-4 py-3 sticky top-[65px] z-30 shadow-sm">
-                <button 
-                    onClick={() => setActiveCategory('Todas')}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeCategory === 'Todas' ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-500'}`}
-                >
-                    Todas
-                </button>
-                {CATEGORIES.map(c => (
-                    <button 
-                        key={c.id}
-                        onClick={() => setActiveCategory(c.id)}
-                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all flex items-center gap-2 ${activeCategory === c.id ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-500'}`}
-                    >
-                        <span>{c.icon}</span> {c.id}
-                    </button>
-                ))}
-            </div>
-        )}
 
         <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-32 md:pb-8">
           {activeView === 'menu' && !isStaffMode && (
@@ -338,13 +347,14 @@ const App: React.FC = () => {
               <div className="bg-white p-8 rounded-[40px] border shadow-sm space-y-6">
                 <div className="flex items-center gap-3 border-b pb-4">
                     <Store className="w-6 h-6 text-orange-600" />
-                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Configuración del <span className="text-orange-600 not-italic">Negocio</span></h3>
+                    <h3 className="text-xl font-black uppercase tracking-tighter italic">Personalizar <span className="text-orange-600 not-italic">Identidad</span></h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nombre del Restaurante</label>
                         <input 
                             type="text" 
+                            placeholder={DEFAULT_BRANDING.name}
                             value={restaurantSettings.name} 
                             onChange={(e) => saveBranding(e.target.value, restaurantSettings.logoUrl)}
                             className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border-2 border-transparent focus:border-slate-200 shadow-inner" 
@@ -361,6 +371,7 @@ const App: React.FC = () => {
                         />
                     </div>
                 </div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase italic">* Los cambios se aplican instantáneamente en todos los dispositivos conectados.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -369,8 +380,8 @@ const App: React.FC = () => {
                     <Wifi className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-[10px] font-black uppercase text-slate-400">Estado Nube</h4>
-                    <p className="text-sm font-black">{isFirebaseEnabled ? 'ACTIVO' : 'MODO LOCAL'}</p>
+                    <h4 className="text-[10px] font-black uppercase text-slate-400">Nube Sync</h4>
+                    <p className="text-sm font-black">{isFirebaseEnabled ? 'ACTIVO' : 'LOCAL'}</p>
                   </div>
                 </div>
                 <div className="bg-white p-6 rounded-[32px] border shadow-sm flex items-center gap-5">
@@ -378,7 +389,7 @@ const App: React.FC = () => {
                     <Store className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-[10px] font-black uppercase text-slate-400">Items Menú</h4>
+                    <h4 className="text-[10px] font-black uppercase text-slate-400">Total Menú</h4>
                     <p className="text-sm font-black">{menuItems.length} PLATOS</p>
                   </div>
                 </div>
@@ -387,8 +398,8 @@ const App: React.FC = () => {
                     <Sparkles className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-[10px] font-black uppercase text-slate-400">Analítica IA</h4>
-                    <p className="text-sm font-black">{process.env.API_KEY ? 'LISTA' : 'REQUIERE KEY'}</p>
+                    <h4 className="text-[10px] font-black uppercase text-slate-400">IA Inteligente</h4>
+                    <p className="text-sm font-black">{process.env.API_KEY ? 'LISTA' : 'OFFLINE'}</p>
                   </div>
                 </div>
               </div>
@@ -432,22 +443,22 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* MOBILE NAV */}
+      {/* MOBILE BOTTOM NAV */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950 text-white flex items-center justify-around pb-safe z-50 border-t border-white/5 px-4 shadow-[0_-8px_30px_rgb(0,0,0,0.12)]">
         <MobileNavItem icon={<Home />} label="Menú" active={!isStaffMode && activeView === 'menu'} onClick={() => { setIsStaffMode(false); setActiveView('menu'); }} />
         <MobileNavItem icon={<ChefHat />} label="Cocina" active={isStaffMode && activeView === 'kitchen'} onClick={() => { setIsStaffMode(true); setActiveView('kitchen'); }} />
-        <MobileNavItem icon={isStaffMode ? <Settings /> : <Lock />} label={isStaffMode ? "Panel" : "Staff"} active={isStaffMode && activeView === 'admin'} onClick={() => isStaffMode ? setActiveView('admin') : setShowLogin(true)} />
+        <MobileNavItem icon={<Settings />} label="Panel" active={isStaffMode && activeView === 'admin'} onClick={() => isStaffMode ? setActiveView('admin') : setShowLogin(true)} />
       </nav>
 
       {/* LOGIN MODAL */}
       {showLogin && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[150] flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-[48px] p-12 text-center shadow-2xl animate-in zoom-in duration-500">
              <div className="w-20 h-20 bg-slate-100 rounded-[32px] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner">
                 <Lock className="w-10 h-10" />
              </div>
              <h2 className="text-2xl font-black uppercase tracking-tighter mb-2 italic">Acceso <span className="text-orange-600 not-italic">Staff</span></h2>
-             <p className="text-[10px] font-bold text-slate-400 uppercase mb-8">Ingresa el PIN de seguridad</p>
+             <p className="text-[10px] font-bold text-slate-400 uppercase mb-8">PIN: 1234</p>
              <input 
                 type="password" 
                 placeholder="••••" 
@@ -469,7 +480,7 @@ const App: React.FC = () => {
 
       {/* CARRITO */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-[60] flex justify-end">
+        <div className="fixed inset-0 z-[200] flex justify-end">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
              <div className="p-8 border-b flex justify-between items-center bg-slate-50/50">
@@ -510,7 +521,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-end mb-10">
                   <div>
                     <span className="text-[11px] font-black uppercase text-slate-400">Total a pagar</span>
-                    <p className="text-[9px] font-bold text-slate-300 uppercase">Impuestos incluidos</p>
+                    <span className="block text-[9px] font-bold text-slate-300 uppercase">Impuestos incluidos</span>
                   </div>
                   <span className="text-5xl font-black tracking-tighter">${cartTotal.toFixed(2)}</span>
                 </div>
@@ -553,9 +564,9 @@ const App: React.FC = () => {
 
 // Componentes Auxiliares
 const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
-  <button onClick={onClick} className={`relative w-full p-5 flex items-center gap-4 rounded-3xl transition-all duration-300 group ${active ? 'bg-orange-600 text-white shadow-xl shadow-orange-600/30 translate-x-1' : 'text-slate-500 hover:bg-white/5'}`}>
+  <button onClick={onClick} className={`relative w-full p-5 flex items-center gap-4 rounded-3xl transition-all duration-300 group ${active ? 'bg-orange-600 text-white shadow-xl shadow-orange-600/30' : 'text-slate-500 hover:bg-white/5'}`}>
     <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>{icon}</div>
-    <span className="text-[11px] font-black uppercase tracking-widest">{label}</span>
+    <span className="text-[11px] font-black uppercase tracking-widest text-left leading-tight truncate">{label}</span>
     {badge > 0 && <span className="absolute top-4 right-4 bg-white text-orange-600 text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-xl shadow-lg animate-bounce">{badge}</span>}
   </button>
 );
@@ -570,7 +581,7 @@ const MobileNavItem = ({ icon, label, active, onClick }: any) => (
 const AdminForm = ({ item, onSave, onClose }: any) => {
   const [data, setData] = useState(item || { name: '', price: 0, category: 'Hamburguesas', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&h=300', description: '' });
   return (
-    <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[110] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in duration-300">
+    <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[300] flex items-center justify-center p-6 overflow-y-auto animate-in fade-in duration-300">
       <div className="bg-white w-full max-w-lg rounded-[56px] p-8 md:p-12 shadow-2xl animate-in slide-in-from-bottom duration-500">
         <h2 className="text-2xl md:text-3xl font-black uppercase tracking-tighter mb-8 md:mb-10 italic">{item ? 'Actualizar' : 'Crear'} <span className="text-orange-600 not-italic">Plato</span></h2>
         <div className="space-y-4 md:space-y-6">
