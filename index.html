@@ -1,14 +1,20 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Santa Parrilla - Pro Gestión</title>
+    <title>Santa Parrilla - Pedidos Online</title>
     
     <!-- PWA Meta Tags -->
+    <link rel="manifest" href="/metadata.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Santa Parrilla">
     <meta name="theme-color" content="#020617">
+    
+    <!-- Icono para iPhone -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3075/3075977.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -25,11 +31,14 @@
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
         .pt-safe { padding-top: env(safe-area-inset-top); }
         
-        @keyframes pulse-soft {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
+        @keyframes swing {
+            0%, 100% { transform: rotate(0deg); }
+            20% { transform: rotate(15deg); }
+            40% { transform: rotate(-10deg); }
+            60% { transform: rotate(5deg); }
+            80% { transform: rotate(-5deg); }
         }
-        .animate-pulse-soft { animation: pulse-soft 2s infinite ease-in-out; }
+        .animate-swing { animation: swing 2s ease-in-out infinite; }
     </style>
 <script type="importmap">
 {
