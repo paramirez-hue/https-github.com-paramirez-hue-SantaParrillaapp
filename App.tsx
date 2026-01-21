@@ -55,7 +55,6 @@ const App: React.FC = () => {
   const [restaurantSettings, setRestaurantSettings] = useState(() => {
     const saved = localStorage.getItem('santa_parrilla_settings');
     if (saved) return JSON.parse(saved);
-    // Si no hay nada guardado, usamos valores vacíos para que no muestre la hamburguesa genérica
     return { ...DEFAULT_BRANDING, logoUrl: '', name: 'Santa Parrilla' };
   });
 
@@ -89,11 +88,9 @@ const App: React.FC = () => {
       if (settingsData) {
         const newSettings = { 
           name: settingsData.name, 
-          logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl,
-          whatsappPhone: settingsData.whatsappPhone || DEFAULT_BRANDING.whatsappPhone
+          logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl
         };
         setRestaurantSettings(newSettings);
-        // Guardar en cache local para la próxima vez
         localStorage.setItem('santa_parrilla_settings', JSON.stringify(newSettings));
       }
     } catch (err) {
@@ -108,7 +105,7 @@ const App: React.FC = () => {
       reader.onloadend = () => {
         const newUrl = reader.result as string;
         setRestaurantSettings(prev => ({ ...prev, logoUrl: newUrl }));
-        setLogoLoaded(false); // Reset para nueva animación
+        setLogoLoaded(false); 
       };
       reader.readAsDataURL(file);
     }
@@ -120,8 +117,7 @@ const App: React.FC = () => {
       const { error } = await supabase.from('settings').upsert({ 
         id: 'branding', 
         name: restaurantSettings.name,
-        logoUrl: restaurantSettings.logoUrl,
-        whatsappPhone: restaurantSettings.whatsappPhone
+        logoUrl: restaurantSettings.logoUrl
       });
       if (error) {
         if (error.message.includes('row-level security')) setRlsErrorVisible(true);
@@ -170,15 +166,6 @@ const App: React.FC = () => {
     });
   };
 
-  const sendWhatsAppNotification = (orderData: any) => {
-    const phone = restaurantSettings.whatsappPhone || DEFAULT_BRANDING.whatsappPhone;
-    const itemsList = orderData.items.map((i: any) => `- ${i.quantity}x ${i.name} ($${(i.price * i.quantity).toFixed(2)})`).join('%0A');
-    const text = `🔥 *NUEVO PEDIDO - ${restaurantSettings.name}* 🔥%0A%0A👤 *Cliente:* ${orderData.customerName}%0A📍 *Ubicación:* ${orderData.tableNumber}%0A%0A*DETALLE:*%0A${itemsList}%0A%0A💰 *TOTAL:* $${orderData.total.toFixed(2)}%0A%0A⏰ _Enviado desde la App Oficial_`;
-    
-    const whatsappUrl = `https://wa.me/${phone}?text=${text}`;
-    window.open(whatsappUrl, '_blank');
-  };
-
   const handlePayment = async () => {
     if (!customerName) return alert("Ingresa tu nombre");
     setIsPaying(true);
@@ -195,9 +182,6 @@ const App: React.FC = () => {
       const { error } = await supabase.from('orders').insert([newOrder]);
       if (error && error.message.includes('row-level security')) setRlsErrorVisible(true);
       
-      // Notificar por WhatsApp
-      sendWhatsAppNotification(newOrder);
-
       setCart([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
@@ -217,11 +201,9 @@ const App: React.FC = () => {
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const filteredMenu = activeCategory === 'Todas' ? menuItems : menuItems.filter(i => i.category === activeCategory);
 
-  // Pantalla de Bienvenida (Splash Screen)
   if (!hasEntered) {
     return (
       <div className="fixed inset-0 z-[500] bg-[#020617] flex flex-col items-center justify-center p-8 overflow-hidden">
-        {/* Decoración de fondo */}
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-orange-600/10 blur-[120px] rounded-full"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-orange-600/5 blur-[120px] rounded-full"></div>
         
@@ -306,12 +288,10 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans bg-[#FAF9F6] text-slate-900">
-      {/* Sidebar Desktop */}
       <aside className="hidden md:flex flex-col bg-[#020617] text-white w-64 h-screen sticky top-0 border-r border-white/5 shrink-0">
         <NavContent />
       </aside>
 
-      {/* Mobile Drawer Overlay */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-[100] md:hidden">
           <div className="absolute inset-0 bg-[#020617]/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
@@ -441,13 +421,6 @@ const App: React.FC = () => {
                         <div className="space-y-3">
                           <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre Comercial</label>
                           <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-6 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Nombre de tu negocio" />
-                        </div>
-                        <div className="space-y-3">
-                          <label className="text-[10px] font-black text-slate-400 uppercase ml-4 tracking-widest">WhatsApp de Pedidos</label>
-                          <div className="relative">
-                            <MessageCircle className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-500" />
-                            <input type="text" value={restaurantSettings.whatsappPhone || ''} onChange={e => setRestaurantSettings({...restaurantSettings, whatsappPhone: e.target.value})} className="w-full p-6 pl-14 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Ej: 573000000000" />
-                          </div>
                         </div>
                     </div>
                 </div>
