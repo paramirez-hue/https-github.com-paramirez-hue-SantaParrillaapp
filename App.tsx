@@ -50,10 +50,19 @@ const App: React.FC = () => {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
-  const [restaurantSettings, setRestaurantSettings] = useState(DEFAULT_BRANDING);
+  
+  // Intentar cargar branding desde localStorage para evitar parpadeo
+  const [restaurantSettings, setRestaurantSettings] = useState(() => {
+    const saved = localStorage.getItem('santa_parrilla_settings');
+    if (saved) return JSON.parse(saved);
+    // Si no hay nada guardado, usamos valores vacíos para que no muestre la hamburguesa genérica
+    return { ...DEFAULT_BRANDING, logoUrl: '', name: 'Santa Parrilla' };
+  });
+
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
   const [rlsErrorVisible, setRlsErrorVisible] = useState(false);
+  const [logoLoaded, setLogoLoaded] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevOrdersCount = useRef(0);
@@ -78,11 +87,14 @@ const App: React.FC = () => {
 
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
       if (settingsData) {
-        setRestaurantSettings({ 
+        const newSettings = { 
           name: settingsData.name, 
           logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl,
           whatsappPhone: settingsData.whatsappPhone || DEFAULT_BRANDING.whatsappPhone
-        });
+        };
+        setRestaurantSettings(newSettings);
+        // Guardar en cache local para la próxima vez
+        localStorage.setItem('santa_parrilla_settings', JSON.stringify(newSettings));
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -94,7 +106,9 @@ const App: React.FC = () => {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setRestaurantSettings(prev => ({ ...prev, logoUrl: reader.result as string }));
+        const newUrl = reader.result as string;
+        setRestaurantSettings(prev => ({ ...prev, logoUrl: newUrl }));
+        setLogoLoaded(false); // Reset para nueva animación
       };
       reader.readAsDataURL(file);
     }
@@ -113,6 +127,7 @@ const App: React.FC = () => {
         if (error.message.includes('row-level security')) setRlsErrorVisible(true);
         throw error;
       }
+      localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
       fetchData();
@@ -213,17 +228,24 @@ const App: React.FC = () => {
         <div className="relative z-10 text-center space-y-12 animate-in fade-in zoom-in duration-1000">
           <div className="relative inline-block">
              <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full scale-150 animate-pulse"></div>
-             <div className="w-48 h-48 md:w-64 md:h-64 bg-[#0F172A] rounded-full p-4 border-8 border-orange-500/30 shadow-[0_0_50px_rgba(249,115,22,0.2)] overflow-hidden relative">
-               <img 
-                 src={restaurantSettings.logoUrl} 
-                 className="w-full h-full object-cover scale-110" 
-                 alt="Logo"
-               />
+             <div className="w-48 h-48 md:w-56 md:h-56 bg-[#0F172A] rounded-full p-4 border-8 border-orange-500/30 shadow-[0_0_50px_rgba(249,115,22,0.2)] overflow-hidden relative flex items-center justify-center">
+               {restaurantSettings.logoUrl ? (
+                 <img 
+                   src={restaurantSettings.logoUrl} 
+                   className={`w-full h-full object-cover scale-110 transition-opacity duration-700 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} 
+                   alt="Logo"
+                   onLoad={() => setLogoLoaded(true)}
+                 />
+               ) : (
+                 <div className="w-full h-full bg-slate-900/50 flex items-center justify-center">
+                    <div className="w-12 h-12 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
+                 </div>
+               )}
              </div>
           </div>
           
           <div className="space-y-4">
-            <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter">
+            <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter leading-tight">
               Bienvenido a <br/>
               <span className="text-orange-500 not-italic">{restaurantSettings.name}</span>
             </h1>
@@ -231,7 +253,7 @@ const App: React.FC = () => {
           
           <button 
             onClick={() => setHasEntered(true)}
-            className="group relative px-12 py-6 bg-orange-600 hover:bg-orange-500 text-white rounded-[2rem] font-black uppercase text-sm tracking-[0.3em] shadow-2xl shadow-orange-600/40 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
+            className="group relative px-12 py-6 bg-orange-600 hover:bg-orange-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.3em] shadow-2xl shadow-orange-600/40 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
           >
             Ingresar a la Parrilla
             <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
@@ -239,7 +261,7 @@ const App: React.FC = () => {
         </div>
         
         <div className="absolute bottom-10 left-0 right-0 text-center">
-           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">© 2024 Santa Parrilla - Gestión Premium</p>
+           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">© 2024 {restaurantSettings.name} - Gestión Premium</p>
         </div>
       </div>
     );
@@ -250,11 +272,11 @@ const App: React.FC = () => {
       <div className="p-10 text-center">
         <div className="w-24 h-24 bg-[#0F172A] rounded-full mx-auto flex items-center justify-center mb-5 shadow-2xl overflow-hidden border-4 border-orange-500/30 relative group">
           <img 
-            src={restaurantSettings.logoUrl} 
+            src={restaurantSettings.logoUrl || DEFAULT_BRANDING.logoUrl} 
             className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-500" 
             alt="Logo"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png';
+              (e.target as HTMLImageElement).src = DEFAULT_BRANDING.logoUrl;
             }}
           />
           <div className="absolute inset-0 bg-orange-500/5 animate-pulse"></div>
@@ -305,7 +327,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-slate-100 rounded-xl active:scale-90 text-slate-900"><LayoutGrid className="w-6 h-6" /></button>
             <div className="flex items-center gap-3">
-              <img src={restaurantSettings.logoUrl} className="w-10 h-10 rounded-full shadow-lg border border-orange-500/20 md:hidden bg-[#020617]" />
+              <img src={restaurantSettings.logoUrl || DEFAULT_BRANDING.logoUrl} className="w-10 h-10 rounded-full shadow-lg border border-orange-500/20 md:hidden bg-[#020617]" />
               <div>
                   <h2 className="text-sm md:text-xl font-black uppercase tracking-tight italic text-slate-900">
                       {isStaffMode ? (activeView === 'kitchen' ? 'Comandas' : activeView === 'admin' ? 'Gestión Santa Parrilla' : 'Marketing IA') : restaurantSettings.name}
@@ -427,13 +449,6 @@ const App: React.FC = () => {
                             <input type="text" value={restaurantSettings.whatsappPhone || ''} onChange={e => setRestaurantSettings({...restaurantSettings, whatsappPhone: e.target.value})} className="w-full p-6 pl-14 bg-slate-50 rounded-[1.5rem] font-black text-sm outline-none border-2 border-transparent focus:border-orange-500 shadow-inner transition-all" placeholder="Ej: 573000000000" />
                           </div>
                         </div>
-                    </div>
-                    <div className="mt-8 p-6 bg-[#020617] rounded-[2rem] border border-orange-500/20 flex flex-col md:flex-row items-center gap-6">
-                       <div className="p-4 bg-orange-600/10 rounded-full"><Upload className="w-6 h-6 text-orange-400" /></div>
-                       <div className="text-center md:text-left">
-                         <p className="text-[11px] font-black text-white uppercase tracking-widest">Haz clic en el logo arriba para subir el archivo que me pasaste.</p>
-                         <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 italic">Soporta PNG, JPG y SVG.</p>
-                       </div>
                     </div>
                 </div>
 
