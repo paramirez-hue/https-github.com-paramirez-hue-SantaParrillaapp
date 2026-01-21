@@ -201,16 +201,18 @@ const App: React.FC = () => {
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const filteredMenu = activeCategory === 'Todas' ? menuItems : menuItems.filter(i => i.category === activeCategory);
 
+  // Pantalla de Bienvenida (Splash Screen)
   if (!hasEntered) {
     return (
       <div className="fixed inset-0 z-[500] bg-[#020617] flex flex-col items-center justify-center p-8 overflow-hidden">
+        {/* Decoración de fondo */}
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-orange-600/10 blur-[120px] rounded-full"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-orange-600/5 blur-[120px] rounded-full"></div>
         
         <div className="relative z-10 text-center space-y-12 animate-in fade-in zoom-in duration-1000">
           <div className="relative inline-block">
              <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full scale-150 animate-pulse"></div>
-             <div className="w-48 h-48 md:w-56 md:h-56 bg-[#0F172A] rounded-full p-4 border-8 border-orange-500/30 shadow-[0_0_50px_rgba(249,115,22,0.2)] overflow-hidden relative flex items-center justify-center">
+             <div className="w-44 h-44 md:w-52 md:h-52 bg-[#0F172A] rounded-full p-4 border-8 border-orange-500/30 shadow-[0_0_50px_rgba(249,115,22,0.2)] overflow-hidden relative flex items-center justify-center">
                {restaurantSettings.logoUrl ? (
                  <img 
                    src={restaurantSettings.logoUrl} 
@@ -220,22 +222,22 @@ const App: React.FC = () => {
                  />
                ) : (
                  <div className="w-full h-full bg-slate-900/50 flex items-center justify-center">
-                    <div className="w-12 h-12 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
+                    <div className="w-10 h-10 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
                  </div>
                )}
              </div>
           </div>
           
-          <div className="space-y-4">
-            <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter leading-tight">
-              Bienvenido a <br/>
-              <span className="text-orange-500 not-italic">{restaurantSettings.name}</span>
+          <div className="space-y-2">
+            <span className="font-lettering text-white text-3xl md:text-4xl block opacity-90 drop-shadow-lg">Bienvenido a</span>
+            <h1 className="text-4xl md:text-6xl font-black text-orange-500 uppercase italic tracking-tighter leading-tight drop-shadow-2xl">
+              {restaurantSettings.name}
             </h1>
           </div>
           
           <button 
             onClick={() => setHasEntered(true)}
-            className="group relative px-12 py-6 bg-orange-600 hover:bg-orange-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.3em] shadow-2xl shadow-orange-600/40 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
+            className="group relative px-12 py-5 bg-orange-600 hover:bg-orange-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.3em] shadow-2xl shadow-orange-600/40 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
           >
             INGRESAR
             <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
