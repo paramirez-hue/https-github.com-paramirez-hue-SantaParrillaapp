@@ -255,7 +255,7 @@ const App: React.FC = () => {
             onClick={() => setHasEntered(true)}
             className="group relative px-12 py-6 bg-orange-600 hover:bg-orange-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.3em] shadow-2xl shadow-orange-600/40 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
           >
-            Ingresar a la Parrilla
+            INGRESAR
             <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
           </button>
         </div>
