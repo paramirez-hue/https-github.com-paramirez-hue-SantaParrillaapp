@@ -1,9 +1,15 @@
 
+export interface Category {
+  id: string;
+  name: string;
+  icon: string;
+}
+
 export interface FoodItem {
   id: string;
   name: string;
   price: number;
-  category: 'Hamburguesas' | 'Carnes' | 'Papas Fritas' | 'Bebidas' | 'Postres';
+  category: string; // Cambiado a string simple para soportar categorías dinámicas
   image: string;
   description: string;
 }
@@ -32,7 +38,7 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   customerName: string;
-  createdAt: string | number; // Soportamos string ISO de Supabase y number timestamp
+  createdAt: string | number;
   tableNumber?: string;
 }
 

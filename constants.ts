@@ -1,10 +1,9 @@
 
-import { FoodItem } from './types';
+import { FoodItem, Category } from './types';
 
-// CONFIGURACIÓN PREDETERMINADA DEL NEGOCIO
 export const DEFAULT_BRANDING = {
   name: 'Santa Parrilla',
-  logoUrl: 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png' // Se eliminó whatsappPhone
+  logoUrl: 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png'
 };
 
 export const INITIAL_MENU: FoodItem[] = [
@@ -58,10 +57,10 @@ export const INITIAL_MENU: FoodItem[] = [
   }
 ];
 
-export const CATEGORIES = [
-  { id: 'Hamburguesas', icon: '🍔' },
-  { id: 'Carnes', icon: '🥩' },
-  { id: 'Papas Fritas', icon: '🍟' },
-  { id: 'Bebidas', icon: '🥤' },
-  { id: 'Postres', icon: '🍰' }
-] as const;
+export const INITIAL_CATEGORIES: Category[] = [
+  { id: 'cat1', name: 'Hamburguesas', icon: '🍔' },
+  { id: 'cat2', name: 'Carnes', icon: '🥩' },
+  { id: 'cat3', name: 'Papas Fritas', icon: '🍟' },
+  { id: 'cat4', name: 'Bebidas', icon: '🥤' },
+  { id: 'cat5', name: 'Postres', icon: '🍰' }
+];
