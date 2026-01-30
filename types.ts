@@ -9,13 +9,14 @@ export interface FoodItem {
   id: string;
   name: string;
   price: number;
-  category: string; // Cambiado a string simple para soportar categorías dinámicas
+  category: string; 
   image: string;
   description: string;
 }
 
 export interface OrderItem extends FoodItem {
   quantity: number;
+  additions?: FoodItem[];
 }
 
 export enum OrderStatus {

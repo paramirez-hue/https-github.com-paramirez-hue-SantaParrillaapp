@@ -40,20 +40,20 @@ export const INITIAL_MENU: FoodItem[] = [
     image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=400&h=300'
   },
   {
-    id: 'p2',
-    name: 'Papas Criminales',
-    price: 8.50,
-    category: 'Papas Fritas',
-    description: 'Bañadas en cheddar fundido, bacon picado y cebollín.',
-    image: 'https://images.unsplash.com/photo-1585109649139-366815a0d713?auto=format&fit=crop&w=400&h=300'
+    id: 'add1',
+    name: 'Queso Extra',
+    price: 1.50,
+    category: 'Adiciones',
+    description: 'Doble porción de queso cheddar fundido.',
+    image: 'https://images.unsplash.com/photo-1552767059-ce182ead6c1b?auto=format&fit=crop&w=400&h=300'
   },
   {
-    id: 'd1',
-    name: 'Limonada de Coco',
-    price: 4.50,
-    category: 'Bebidas',
-    description: 'Refrescante mezcla de coco y limón natural.',
-    image: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=400&h=300'
+    id: 'add2',
+    name: 'Tocineta Crunchy',
+    price: 2.00,
+    category: 'Adiciones',
+    description: 'Tiras de tocineta ahumada extra crocantes.',
+    image: 'https://images.unsplash.com/photo-1606851682840-0681159bf5ee?auto=format&fit=crop&w=400&h=300'
   }
 ];
 
@@ -62,5 +62,5 @@ export const INITIAL_CATEGORIES: Category[] = [
   { id: 'cat2', name: 'Carnes', icon: '🥩' },
   { id: 'cat3', name: 'Papas Fritas', icon: '🍟' },
   { id: 'cat4', name: 'Bebidas', icon: '🥤' },
-  { id: 'cat5', name: 'Postres', icon: '🍰' }
+  { id: 'cat5', name: 'Adiciones', icon: '➕' }
 ];
