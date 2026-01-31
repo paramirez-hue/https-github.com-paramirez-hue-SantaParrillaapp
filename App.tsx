@@ -35,20 +35,15 @@ const AnimatedFireBackground = () => {
 
   return (
     <div className="embers-container pointer-events-none">
-      {/* Resplandor base de las brasas */}
       <div 
         className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[150%] h-[50%] bg-orange-900/40 rounded-[100%] mix-blend-screen"
         style={{ animation: 'fireGlow 6s infinite ease-in-out', filter: 'blur(100px)' }}
       />
-      {/* Núcleo de calor */}
       <div 
         className="absolute bottom-[-5%] left-1/2 -translate-x-1/2 w-[100%] h-[30%] bg-red-600/20 rounded-[100%] mix-blend-overlay"
         style={{ animation: 'fireGlow 4s infinite ease-in-out alternate', filter: 'blur(70px)' }}
       />
-      {/* Distorsión por calor */}
       <div className="absolute inset-0 bg-gradient-to-t from-orange-950/30 to-transparent" style={{ animation: 'heatHaze 8s infinite ease-in-out' }} />
-      
-      {/* Chispas y brasas voladoras */}
       {sparks.map(spark => (
         <div
           key={spark.id}
@@ -64,8 +59,6 @@ const AnimatedFireBackground = () => {
           } as any}
         />
       ))}
-      
-      {/* Viñeteado oscuro para profundidad */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.9)_100%)]" />
     </div>
   );
@@ -131,10 +124,12 @@ const App: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const { data: menuData } = await supabase.from('menu').select('*');
+      const { data: menuData, error: menuError } = await supabase.from('menu').select('*');
+      if (menuError) console.error("Menu fetch error:", menuError);
       setMenuItems(menuData || []);
 
-      const { data: catData } = await supabase.from('categories').select('*').order('name');
+      const { data: catData, error: catError } = await supabase.from('categories').select('*').order('name');
+      if (catError) console.error("Categories fetch error:", catError);
       setCategories(catData && catData.length > 0 ? catData : INITIAL_CATEGORIES);
 
       const { data: ordersData } = await supabase
@@ -151,7 +146,7 @@ const App: React.FC = () => {
         localStorage.setItem('santa_parrilla_settings', JSON.stringify(newSettings));
       }
     } catch (err) {
-      console.error("Fetch error:", err);
+      console.error("General Fetch error:", err);
     }
   };
 
@@ -171,31 +166,36 @@ const App: React.FC = () => {
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
-      await supabase.from('settings').upsert({ id: 'branding', name: restaurantSettings.name, logoUrl: restaurantSettings.logoUrl });
+      const { error } = await supabase.from('settings').upsert({ id: 'branding', name: restaurantSettings.name, logoUrl: restaurantSettings.logoUrl });
+      if (error) throw error;
       localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
       fetchData();
+    } catch (err: any) {
+      alert("Error al guardar marca: " + (err.message || "Error desconocido"));
     } finally { setIsSavingBranding(false); }
   };
 
   const handleDeleteItem = async (id: string) => {
     if (!confirm("¿Eliminar este plato?")) return;
     try {
-      await supabase.from('menu').delete().eq('id', id);
+      const { error } = await supabase.from('menu').delete().eq('id', id);
+      if (error) throw error;
       fetchData();
-    } catch (err) {
-      setMenuItems(prev => prev.filter(item => item.id !== id));
+    } catch (err: any) {
+      alert("Error al eliminar: " + err.message);
     }
   };
 
   const handleDeleteCategory = async (id: string) => {
     if (!confirm("¿Eliminar esta categoría?")) return;
     try {
-      await supabase.from('categories').delete().eq('id', id);
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) throw error;
       fetchData();
-    } catch (err) {
-      setCategories(prev => prev.filter(c => c.id !== id));
+    } catch (err: any) {
+      alert("Error al eliminar categoría: " + err.message);
     }
   };
 
@@ -225,10 +225,13 @@ const App: React.FC = () => {
         tableNumber: tableNumber || 'Llevar', 
         createdAt: new Date().toISOString() 
       };
-      await supabase.from('orders').insert([newOrder]);
+      const { error } = await supabase.from('orders').insert([newOrder]);
+      if (error) throw error;
       setCart([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); }, 2000);
+    } catch (err: any) {
+      alert("Error al crear pedido: " + err.message);
     } finally { setIsPaying(false); }
   };
 
@@ -536,17 +539,57 @@ const App: React.FC = () => {
 
       {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
       {isCartOpen && <CartView cart={cart} setCart={setCart} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
-      {isAdminFormOpen && <AdminForm item={editingItem} categories={categories} onSave={async (d: any) => { if(d.id && !String(d.id).startsWith('local_')) await supabase.from('menu').upsert(d); else await supabase.from('menu').insert([{...d, id: undefined}]); setIsAdminFormOpen(false); fetchData(); }} onClose={() => setIsAdminFormOpen(false)} />}
-      {isCategoryFormOpen && <CategoryForm category={editingCategory} onSave={async (d: any) => { 
-        if(d.id) {
-          await supabase.from('categories').upsert(d); 
-        } else {
-          const { id, ...newCat } = d;
-          await supabase.from('categories').insert([newCat]);
-        }
-        setIsCategoryFormOpen(false); 
-        fetchData(); 
-      }} onClose={() => setIsCategoryFormOpen(false)} />}
+      
+      {isAdminFormOpen && (
+        <AdminForm 
+          item={editingItem} 
+          categories={categories} 
+          onSave={async (d: any) => { 
+            try {
+              // Si el ID es de los iniciales (ej: 'b1'), lo quitamos para que Supabase cree un UUID válido
+              const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add'));
+              if (d.id && !isInitial) {
+                const { error } = await supabase.from('menu').upsert(d);
+                if (error) throw error;
+              } else {
+                const { id, ...newItem } = d;
+                const { error } = await supabase.from('menu').insert([newItem]);
+                if (error) throw error;
+              }
+              setIsAdminFormOpen(false); 
+              fetchData();
+            } catch (err: any) {
+              alert("Error al guardar producto: " + (err.message || "Error desconocido"));
+            }
+          }} 
+          onClose={() => setIsAdminFormOpen(false)} 
+        />
+      )}
+
+      {isCategoryFormOpen && (
+        <CategoryForm 
+          category={editingCategory} 
+          onSave={async (d: any) => { 
+            try {
+              // Si el ID es de los iniciales (ej: 'cat1'), lo quitamos para que Supabase cree un UUID válido
+              const isInitial = d.id && d.id.startsWith('cat');
+              if (d.id && !isInitial) {
+                const { error } = await supabase.from('categories').upsert(d); 
+                if (error) throw error;
+              } else {
+                const { id, ...newCat } = d;
+                const { error } = await supabase.from('categories').insert([newCat]);
+                if (error) throw error;
+              }
+              setIsCategoryFormOpen(false); 
+              fetchData(); 
+            } catch (err: any) {
+              alert("Error al guardar categoría: " + (err.message || "Error desconocido. Verifica que la tabla 'categories' existe en Supabase."));
+            }
+          }} 
+          onClose={() => setIsCategoryFormOpen(false)} 
+        />
+      )}
     </div>
   );
 };
