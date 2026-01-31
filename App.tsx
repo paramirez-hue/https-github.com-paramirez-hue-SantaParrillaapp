@@ -328,17 +328,11 @@ const App: React.FC = () => {
         <AnimatedFireBackground />
         <div className="relative z-10 text-center space-y-12 animate-fade-scale">
           <div className="relative inline-block">
-             {/* Capas de resplandor suave */}
-             <div className="absolute inset-0 bg-orange-600/30 blur-[140px] rounded-full scale-[1.8] animate-pulse opacity-60"></div>
-             <div className="absolute inset-0 bg-amber-500/20 blur-[80px] rounded-full scale-125 animate-pulse" style={{ animationDelay: '1s', animationDuration: '4s' }}></div>
-             <div className="absolute inset-0 bg-red-500/10 blur-[40px] rounded-full scale-110 animate-pulse" style={{ animationDelay: '2s', animationDuration: '6s' }}></div>
-             
-             <div className="w-60 h-60 md:w-80 md:h-80 bg-slate-950 rounded-full p-2 border-4 border-orange-500/20 shadow-[0_0_50px_rgba(249,115,22,0.3)] relative flex items-center justify-center overflow-hidden">
+             <div className="absolute inset-0 bg-orange-600/20 blur-[120px] rounded-full scale-150 animate-pulse"></div>
+             <div className="w-60 h-60 md:w-80 md:h-80 bg-slate-950 rounded-full p-2 border-4 border-orange-500/20 shadow-2xl relative flex items-center justify-center overflow-hidden">
                 <div className="w-full h-full rounded-full overflow-hidden border-2 border-orange-500/40 relative z-10">
                 {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className={`w-full h-full object-cover transition-opacity duration-1000 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLogoLoaded(true)} /> : <div className="w-full h-full bg-slate-900 flex items-center justify-center"><div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>}
                 </div>
-                {/* Reflejo perimetral interno */}
-                <div className="absolute inset-0 rounded-full border border-white/5 pointer-events-none z-20"></div>
              </div>
           </div>
           <div className="space-y-4">
@@ -495,7 +489,7 @@ const App: React.FC = () => {
 
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6">
-          <div className="bg-white w-full max-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
              <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
              <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
              <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
