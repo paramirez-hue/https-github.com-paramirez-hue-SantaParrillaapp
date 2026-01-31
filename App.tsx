@@ -97,7 +97,7 @@ const App: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [allOrdersHistory, setAllOrdersHistory] = useState<Order[]>([]);
-  const [cart, setCart] = useState<OrderItem[]>([]);
+  const [cart, setOrderItems] = useState<OrderItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [customerName, setCustomerName] = useState('');
   const [tableNumber, setTableNumber] = useState('');
@@ -266,7 +266,7 @@ const App: React.FC = () => {
   };
 
   const addToCart = (item: FoodItem, quantity: number = 1, additions: FoodItem[] = []) => {
-    setCart(prev => [...prev, { ...item, quantity, additions }]);
+    setOrderItems(prev => [...prev, { ...item, quantity, additions }]);
     setSelectedFoodForDetail(null);
   };
 
@@ -287,7 +287,7 @@ const App: React.FC = () => {
         localStorage.setItem('active_order_id', data[0].id);
         setCurrentOrderTrackingId(data[0].id);
       }
-      setCart([]);
+      setOrderItems([]);
       setPaymentSuccess(true);
       setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); setShowTrackingView(true); }, 2000);
     } finally { setIsPaying(false); }
@@ -339,7 +339,10 @@ const App: React.FC = () => {
             <span className="font-lettering text-orange-200 text-4xl md:text-6xl block opacity-90 tracking-wide">Bienvenido a</span>
             <h1 className="text-6xl md:text-[8rem] font-black text-white uppercase italic tracking-tighter leading-none"><span className="text-orange-500">{restaurantSettings.name.split(' ')[0]}</span> {restaurantSettings.name.split(' ')[1]}</h1>
           </div>
-          <button onClick={() => setHasEntered(true)} className="group relative px-12 py-5 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-sm tracking-[0.4em] shadow-xl transition-all hover:scale-110 active:scale-95 flex items-center gap-4 mx-auto btn-press">INGRESAR <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" /></button>
+          <div className="flex flex-col items-center gap-4">
+            <button onClick={() => setHasEntered(true)} className="group relative px-12 py-5 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-sm tracking-[0.4em] shadow-xl transition-all hover:scale-110 active:scale-95 flex items-center gap-4 mx-auto btn-press">INGRESAR <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" /></button>
+            <p className="text-[10px] text-white/30 font-medium tracking-tight mt-2 italic uppercase">Creado por: Pablo Ramirez-pabloramirez9639@gmail.com</p>
+          </div>
         </div>
       </div>
     );
@@ -354,7 +357,7 @@ const App: React.FC = () => {
       <nav className="flex-1 px-6 space-y-3 overflow-y-auto no-scrollbar pb-10">
         {isStaffMode ? (
           <>
-            <SidebarItem icon={<ChefHat className="w-5 h-5" />} label="Comandas" active={activeView === 'kitchen'} onClick={() => {setActiveView('kitchen'); setIsMobileMenuOpen(false);}} badge={orders.length} />
+            <SidebarItem icon={<ChefHat className="w-5 h-5" />} label="Preparaciones" active={activeView === 'kitchen'} onClick={() => {setActiveView('kitchen'); setIsMobileMenuOpen(false);}} badge={orders.length} />
             <SidebarItem icon={<BarChart3 className="w-5 h-5" />} label="Reportes" active={activeView === 'stats'} onClick={() => {setActiveView('stats'); setIsMobileMenuOpen(false);}} />
             <SidebarItem icon={<Settings className="w-5 h-5" />} label="Gestión" active={activeView === 'admin'} onClick={() => {setActiveView('admin'); setIsMobileMenuOpen(false);}} />
             <button onClick={() => {setIsStaffMode(false); setActiveView('menu'); setIsMobileMenuOpen(false);}} className="w-full mt-10 p-5 text-rose-400 hover:bg-rose-500/10 rounded-2xl flex items-center gap-4 font-black text-[10px] uppercase transition-all"><LogOut className="w-4 h-4" /> Salir</button>
@@ -456,7 +459,7 @@ const App: React.FC = () => {
                   </div>
                 );
               })}
-              {orders.length === 0 && <div className="col-span-full py-40 text-center opacity-20"><ChefHat className="w-32 h-32 mx-auto mb-10 text-slate-900" /><p className="font-black uppercase text-sm tracking-[0.5em]">Sin comandas activas</p></div>}
+              {orders.length === 0 && <div className="col-span-full py-40 text-center opacity-20"><ChefHat className="w-32 h-32 mx-auto mb-10 text-slate-900" /><p className="font-black uppercase text-sm tracking-[0.5em]">Sin preparaciones activas</p></div>}
             </div>
           )}
 
@@ -495,7 +498,7 @@ const App: React.FC = () => {
       )}
 
       {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
-      {isCartOpen && <CartView cart={cart} setCart={setCart} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
+      {isCartOpen && <CartView cart={cart} setCart={setOrderItems} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
       {showTrackingView && trackedOrder && <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />}
 
       {isAdminFormOpen && (
