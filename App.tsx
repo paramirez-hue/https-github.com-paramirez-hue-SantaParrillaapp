@@ -324,10 +324,10 @@ const App: React.FC = () => {
           </div>
           <button 
             onClick={() => setHasEntered(true)} 
-            className="group relative px-20 py-8 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-base tracking-[0.5em] shadow-[0_25px_50px_-12px_rgba(234,88,12,0.7)] transition-all hover:scale-110 active:scale-95 flex items-center gap-6 mx-auto btn-press"
+            className="group relative px-12 py-5 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-sm tracking-[0.4em] shadow-[0_20px_40px_-10px_rgba(234,88,12,0.7)] transition-all hover:scale-110 active:scale-95 flex items-center gap-4 mx-auto btn-press"
           >
             INGRESAR 
-            <ArrowRight className="w-7 h-7 group-hover:translate-x-3 transition-transform" />
+            <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" />
           </button>
         </div>
         <div className="absolute bottom-10 left-0 right-0 text-center opacity-50">
@@ -508,7 +508,7 @@ const App: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {menuItems.map(item => (
-                      <div key={item.id} className="bg-white p-6 rounded-[2rem] md:rounded-[2.5rem] border border-slate-200 shadow-premium flex items-center gap-6 group hover:border-orange-200 transition-all">
+                      <div key={item.id} className="bg-white p-6 rounded-[2rem] md:rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6 group hover:border-orange-200 transition-all">
                         <img src={item.image} className="w-16 h-16 md:w-20 md:h-20 rounded-[1.2rem] md:rounded-[1.5rem] object-cover shadow-lg" />
                         <div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div>
                         <div className="flex items-center gap-3">
