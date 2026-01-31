@@ -32,12 +32,15 @@ export enum PaymentStatus {
   FAILED = 'FAILED'
 }
 
+export type PaymentMethod = 'CASH' | 'TRANSFER';
+
 export interface Order {
   id: string;
   items: OrderItem[];
   total: number;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  paymentMethod: PaymentMethod;
   customerName: string;
   createdAt: string | number;
   tableNumber?: string;

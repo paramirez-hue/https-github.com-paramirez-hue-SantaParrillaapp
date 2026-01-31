@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  ShoppingBag, ChefHat, Plus, Minus, X,
+  ShoppingBag, ChefHat, Plus, Minus, X, Info,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Send, ExternalLink, QrCode, Banknote, CreditCard, ArrowRightLeft
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
+import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category, PaymentMethod } from './types';
 import { INITIAL_MENU, INITIAL_CATEGORIES, DEFAULT_BRANDING } from './constants';
 import { improveDescription, generateFoodImage } from './geminiService';
 
@@ -110,15 +110,18 @@ const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedFoodForDetail, setSelectedFoodForDetail] = useState<FoodItem | null>(null);
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
+  const [showWebhookHelp, setShowWebhookHelp] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('CASH');
+  const [showTransferScreen, setShowTransferScreen] = useState(false);
   
-  // Seguimiento de pedido cliente
   const [currentOrderTrackingId, setCurrentOrderTrackingId] = useState<string | null>(() => localStorage.getItem('active_order_id'));
   const [showTrackingView, setShowTrackingView] = useState(false);
 
   const [restaurantSettings, setRestaurantSettings] = useState(() => {
     const saved = localStorage.getItem('santa_parrilla_settings');
     if (saved) return JSON.parse(saved);
-    return { ...DEFAULT_BRANDING, logoUrl: '', name: 'Santa Parrilla', sheetsWebhook: '' };
+    return { ...DEFAULT_BRANDING, logoUrl: '', name: 'Santa Parrilla', sheetsWebhook: '', qrUrl: '', transferUrl: '' };
   });
 
   const [isSavingBranding, setIsSavingBranding] = useState(false);
@@ -126,6 +129,7 @@ const App: React.FC = () => {
   const [logoLoaded, setLogoLoaded] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qrInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = async () => {
     try {
@@ -144,11 +148,14 @@ const App: React.FC = () => {
 
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
       if (settingsData) {
-        setRestaurantSettings({ 
-          name: settingsData.name, 
-          logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl,
-          sheetsWebhook: settingsData.sheetsWebhook || ''
-        });
+        setRestaurantSettings(prev => ({ 
+          ...prev,
+          name: settingsData.name || prev.name, 
+          logoUrl: settingsData.logoUrl || prev.logoUrl,
+          sheetsWebhook: settingsData.sheetsWebhook || prev.sheetsWebhook,
+          qrUrl: settingsData.qrUrl || prev.qrUrl,
+          transferUrl: settingsData.transferUrl || prev.transferUrl
+        }));
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -201,6 +208,29 @@ const App: React.FC = () => {
     return orders.find(o => o.id === currentOrderTrackingId) || null;
   }, [orders, currentOrderTrackingId]);
 
+  const handleTestWebhook = async () => {
+    if (!restaurantSettings.sheetsWebhook) return alert("Ingresa una URL primero.");
+    setIsTestingWebhook(true);
+    try {
+      await fetch(restaurantSettings.sheetsWebhook, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test: true,
+          restaurantName: restaurantSettings.name,
+          message: "Esta es una prueba de conexión exitosa.",
+          timestamp: new Date().toISOString()
+        })
+      });
+      alert("¡Prueba enviada! Si el script está bien configurado, verás una nueva fila en tu Sheet.");
+    } catch (err: any) {
+      alert("Error al conectar: " + err.message);
+    } finally {
+      setIsTestingWebhook(false);
+    }
+  };
+
   const handleExportAndCleanup = async () => {
     if (!restaurantSettings.sheetsWebhook) {
       return alert("Primero configura la URL de Google Sheets en el Panel Admin.");
@@ -210,6 +240,7 @@ const App: React.FC = () => {
     try {
       await fetch(restaurantSettings.sheetsWebhook, {
         method: 'POST',
+        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           restaurantName: restaurantSettings.name,
@@ -221,7 +252,7 @@ const App: React.FC = () => {
         })
       });
       await supabase.from('orders').delete().neq('id', '0');
-      alert("¡Semana cerrada con éxito!");
+      alert("¡Semana cerrada con éxito! Datos enviados a Sheets.");
       fetchHistory();
       fetchData();
     } catch (err: any) {
@@ -238,15 +269,30 @@ const App: React.FC = () => {
     }
   };
 
+  const handleQrUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => { setRestaurantSettings(prev => ({ ...prev, qrUrl: reader.result as string })); };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
-      await supabase.from('settings').upsert({ 
+      const payload = { 
         id: 'branding', 
         name: restaurantSettings.name, 
         logoUrl: restaurantSettings.logoUrl,
-        sheetsWebhook: restaurantSettings.sheetsWebhook
-      });
+        sheetsWebhook: restaurantSettings.sheetsWebhook,
+        qrUrl: restaurantSettings.qrUrl,
+        transferUrl: restaurantSettings.transferUrl
+      };
+      await supabase.from('settings').upsert(payload);
+      
+      localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
+      
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
       fetchData();
@@ -270,14 +316,21 @@ const App: React.FC = () => {
     setSelectedFoodForDetail(null);
   };
 
-  const handlePayment = async () => {
+  const handlePaymentConfirm = async () => {
     if (!customerName) return alert("Ingresa tu nombre");
+    
+    if (selectedPaymentMethod === 'TRANSFER' && !showTransferScreen) {
+      setShowTransferScreen(true);
+      return;
+    }
+
     setIsPaying(true);
     try {
       const newOrder = { 
         items: cart, 
         total: cartTotal, 
         status: OrderStatus.PENDING, 
+        paymentMethod: selectedPaymentMethod,
         customerName, 
         tableNumber: tableNumber || 'Llevar', 
         createdAt: new Date().toISOString() 
@@ -289,7 +342,12 @@ const App: React.FC = () => {
       }
       setOrderItems([]);
       setPaymentSuccess(true);
-      setTimeout(() => { setPaymentSuccess(false); setIsCartOpen(false); setShowTrackingView(true); }, 2000);
+      setShowTransferScreen(false);
+      setTimeout(() => { 
+        setPaymentSuccess(false); 
+        setIsCartOpen(false); 
+        setShowTrackingView(true); 
+      }, 2000);
     } finally { setIsPaying(false); }
   };
 
@@ -329,6 +387,7 @@ const App: React.FC = () => {
         <div className="relative z-10 text-center space-y-12 animate-fade-scale">
           <div className="relative inline-block">
              <div className="absolute inset-0 bg-orange-600/20 blur-[120px] rounded-full scale-150 animate-pulse"></div>
+             
              <div className="w-60 h-60 md:w-80 md:h-80 bg-slate-950 rounded-full p-2 border-4 border-orange-500/20 shadow-2xl relative flex items-center justify-center overflow-hidden">
                 <div className="w-full h-full rounded-full overflow-hidden border-2 border-orange-500/40 relative z-10">
                 {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className={`w-full h-full object-cover transition-opacity duration-1000 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLogoLoaded(true)} /> : <div className="w-full h-full bg-slate-900 flex items-center justify-center"><div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>}
@@ -451,7 +510,18 @@ const App: React.FC = () => {
                 return (
                   <div key={order.id} className={`bg-white border-[3px] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
                     <div className="p-8 pb-6 border-b border-dashed flex justify-between items-start">
-                      <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span><span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA • {order.tableNumber}</span></div><p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p></div>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span>
+                          <span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA • {order.tableNumber}</span>
+                        </div>
+                        <p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${order.paymentMethod === 'TRANSFER' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                            {order.paymentMethod === 'TRANSFER' ? 'Transferencia' : 'Efectivo'}
+                          </span>
+                        </div>
+                      </div>
                       <OrderTimer startTime={order.createdAt} status={order.status} />
                     </div>
                     <div className="p-10 flex-1 space-y-6">{order.items.map((item, idx) => (<div key={idx} className="space-y-2"><div className="flex items-center gap-5 text-lg font-black text-slate-800"><span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span><span className="uppercase truncate flex-1 tracking-tight">{item.name}</span></div>{item.additions && item.additions.length > 0 && (<div className="ml-15 flex flex-wrap gap-2">{item.additions.map((add, ai) => (<span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>))}</div>)}</div>))}</div>
@@ -469,7 +539,29 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center mb-10"><div><h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter text-slate-900">Marca</h4><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuraciones</p></div><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase shadow-xl ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{brandingSaved ? 'Guardado' : 'Guardar'}</button></div>
                     <div className="space-y-6">
                       <div className="flex flex-col md:flex-row gap-6 items-center"><div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0" onClick={() => fileInputRef.current?.click()}>{restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}</div><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Webhook Google Sheets</label><input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://..." /></div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+                        <div className="space-y-4">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 ml-4">Código QR para Pagos</label>
+                          <div className="w-full aspect-square bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all" onClick={() => qrInputRef.current?.click()}>
+                            {restaurantSettings.qrUrl ? <img src={restaurantSettings.qrUrl} className="w-full h-full object-contain p-4" /> : <div className="text-center"><QrCode className="w-12 h-12 text-slate-300 group-hover:text-orange-500 mx-auto mb-2" /><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subir QR</p></div>}
+                          </div>
+                          <input type="file" ref={qrInputRef} className="hidden" accept="image/*" onChange={handleQrUpload} />
+                        </div>
+                        <div className="space-y-6 flex flex-col justify-end">
+                           <div className="space-y-2">
+                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">URL del Banco / Transferencia</label>
+                             <input type="text" value={restaurantSettings.transferUrl} onChange={e => setRestaurantSettings({...restaurantSettings, transferUrl: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200 focus:border-orange-500" placeholder="https://app.banco.com/..." />
+                           </div>
+                           <div className="space-y-2">
+                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 flex items-center gap-2">Webhook Sheets <button onClick={() => setShowWebhookHelp(true)} className="text-orange-500"><Info className="w-3.5 h-3.5" /></button></label>
+                             <div className="relative">
+                               <input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 pr-14 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200 focus:border-orange-500" placeholder="https://script.google.com/..." />
+                               <button onClick={handleTestWebhook} disabled={isTestingWebhook} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-600 hover:text-orange-700">{isTestingWebhook ? <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent animate-spin rounded-full" /> : <Send className="w-5 h-5" />}</button>
+                             </div>
+                           </div>
+                        </div>
+                      </div>
                     </div>
                 </div>
 
@@ -480,16 +572,81 @@ const App: React.FC = () => {
 
                 <div className="space-y-6">
                   <div className="flex justify-between items-center px-6"><div><h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Menú</h4></div><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo</button></div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-lg" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div><div className="flex items-center gap-3"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-4 h-4" /></button></div></div>))}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-lg" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div><div className="flex items-center gap-3"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
                 </div>
             </div>
           )}
         </main>
       </div>
 
+      {showWebhookHelp && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[500] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 overflow-y-auto max-h-[90vh] shadow-2xl relative">
+              <button onClick={() => setShowWebhookHelp(false)} className="absolute top-8 right-8 p-3 bg-slate-100 rounded-2xl text-slate-900"><X className="w-6 h-6" /></button>
+              <div className="space-y-8">
+                 <div className="space-y-2">
+                    <h2 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900">Conectar con <span className="text-orange-600 not-italic">Sheets</span></h2>
+                    <p className="text-slate-500 text-sm font-medium">Sigue estos pasos para recibir tus cierres semanales automáticamente.</p>
+                 </div>
+                 
+                 <div className="space-y-6">
+                    <div className="flex gap-6 items-start">
+                       <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black shrink-0 shadow-lg">1</div>
+                       <div className="space-y-2">
+                          <p className="font-black text-xs uppercase tracking-widest">Prepara tu Hoja</p>
+                          <p className="text-xs text-slate-500 leading-relaxed">Crea una nueva Google Sheet y ve a <span className="font-black text-slate-900 italic">Extensiones > Apps Script</span>.</p>
+                       </div>
+                    </div>
+                    
+                    <div className="flex gap-6 items-start">
+                       <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black shrink-0 shadow-lg">2</div>
+                       <div className="space-y-2 w-full">
+                          <p className="font-black text-xs uppercase tracking-widest">Pega el Código</p>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">Borra todo y pega este script:</p>
+                          <div className="bg-slate-950 p-6 rounded-3xl relative group">
+                             <pre className="text-[10px] font-mono text-orange-300 overflow-x-auto">
+{`function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  sheet.appendRow([
+    new Date(),
+    data.restaurantName,
+    data.date,
+    data.totalSales,
+    data.orderCount,
+    JSON.stringify(data.itemsReport)
+  ]);
+  
+  return ContentService.createTextOutput("OK");
+}`}
+                             </pre>
+                             <button onClick={() => {
+                                navigator.clipboard.writeText(`function doPost(e) {\n  var data = JSON.parse(e.postData.contents);\n  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n  \n  sheet.appendRow([\n    new Date(),\n    data.restaurantName,\n    data.date,\n    data.totalSales,\n    data.orderCount,\n    JSON.stringify(data.itemsReport)\n  ]);\n  \n  return ContentService.createTextOutput("OK");\n}`);
+                                alert("Código copiado");
+                             }} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all">Copiar</button>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="flex gap-6 items-start">
+                       <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black shrink-0 shadow-lg">3</div>
+                       <div className="space-y-2">
+                          <p className="font-black text-xs uppercase tracking-widest">Desplegar</p>
+                          <p className="text-xs text-slate-500 leading-relaxed">Click en <span className="font-black text-slate-900">Implementar > Nueva implementación</span>. Selecciona <span className="font-black italic text-orange-600">"Aplicación Web"</span>, acceso <span className="font-black">"Cualquier persona"</span> y copia la URL aquí.</p>
+                       </div>
+                    </div>
+                 </div>
+                 
+                 <button onClick={() => setShowWebhookHelp(false)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl">Entendido</button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
+          <div className="bg-white w-full max-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
              <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
              <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
              <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
@@ -498,7 +655,26 @@ const App: React.FC = () => {
       )}
 
       {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
-      {isCartOpen && <CartView cart={cart} setCart={setOrderItems} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
+      {isCartOpen && (
+        <CartView 
+          cart={cart} 
+          setCart={setOrderItems} 
+          customerName={customerName} 
+          setCustomerName={setCustomerName} 
+          tableNumber={tableNumber} 
+          setTableNumber={setTableNumber} 
+          cartTotal={cartTotal} 
+          isPaying={isPaying} 
+          paymentSuccess={paymentSuccess} 
+          handlePayment={handlePaymentConfirm} 
+          onClose={() => { setIsCartOpen(false); setShowTransferScreen(false); }}
+          selectedPaymentMethod={selectedPaymentMethod}
+          setSelectedPaymentMethod={setSelectedPaymentMethod}
+          showTransferScreen={showTransferScreen}
+          setShowTransferScreen={setShowTransferScreen}
+          restaurantSettings={restaurantSettings}
+        />
+      )}
       {showTrackingView && trackedOrder && <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />}
 
       {isAdminFormOpen && (
@@ -637,29 +813,152 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
   );
 };
 
-const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, setTableNumber, cartTotal, isPaying, paymentSuccess, handlePayment, onClose }: any) => {
+const CartView = ({ 
+  cart, 
+  setCart, 
+  customerName, 
+  setCustomerName, 
+  tableNumber, 
+  setTableNumber, 
+  cartTotal, 
+  isPaying, 
+  paymentSuccess, 
+  handlePayment, 
+  onClose,
+  selectedPaymentMethod,
+  setSelectedPaymentMethod,
+  showTransferScreen,
+  setShowTransferScreen,
+  restaurantSettings
+}: any) => {
   const removeItem = (idx: number) => setCart((prev: any[]) => prev.filter((_, i) => i !== idx));
+  
   return (
     <div className="fixed inset-0 z-[200] flex justify-end">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
       <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
-         <div className="p-6 md:p-8 border-b flex justify-between items-center pt-safe"><h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Tu <span className="text-orange-600 not-italic">Orden</span></h2><button onClick={onClose} className="p-2 bg-slate-100 rounded-xl text-slate-900"><X className="w-5 h-5" /></button></div>
-         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 no-scrollbar">
-            {cart.length === 0 ? <div className="py-24 text-center opacity-20"><ShoppingBasket className="w-16 h-16 mx-auto mb-6 text-slate-900" /><p className="font-black uppercase text-[10px] tracking-[0.3em]">Carrito Vacío</p></div> : cart.map((item: any, idx: number) => {
-              const addsPrice = (item.additions || []).reduce((sum: number, add: any) => sum + add.price, 0);
-              return (
-                <div key={idx} className="flex flex-col gap-3 bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100 relative">
-                  <button onClick={() => removeItem(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button>
-                  <div className="flex items-center gap-4"><img src={item.image} className="w-14 h-14 rounded-xl object-cover shadow-lg shrink-0" /><div className="flex-1 min-w-0"><p className="text-[11px] font-black uppercase italic text-slate-900 truncate mb-1">{item.name}</p><p className="text-[9px] font-black text-orange-600 uppercase tracking-widest">${formatPrice(item.price + addsPrice)} c/u</p><p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">CANTIDAD: {item.quantity}</p></div></div>
+         <div className="p-6 md:p-8 border-b flex justify-between items-center pt-safe">
+           <h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Tu <span className="text-orange-600 not-italic">Orden</span></h2>
+           <button onClick={onClose} className="p-2 bg-slate-100 rounded-xl text-slate-900"><X className="w-5 h-5" /></button>
+         </div>
+
+         {showTransferScreen ? (
+           <div className="flex-1 flex flex-col p-8 text-center animate-in zoom-in duration-300">
+             <div className="mb-8">
+               <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                 <ArrowRightLeft className="w-8 h-8" />
+               </div>
+               <h3 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Transferencia</h3>
+               <p className="text-slate-500 text-xs font-medium mt-2">Realiza el pago por un total de <span className="font-black text-slate-900 italic">${formatPrice(cartTotal)}</span></p>
+             </div>
+
+             <div className="flex-1 flex flex-col items-center justify-center">
+               <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 shadow-inner w-full">
+                 {restaurantSettings.qrUrl ? (
+                   <div className="space-y-6">
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Escanea para pagar</p>
+                     <img src={restaurantSettings.qrUrl} className="w-full max-w-[200px] mx-auto rounded-2xl shadow-xl" />
+                   </div>
+                 ) : (
+                   <div className="py-12 opacity-40">
+                     <QrCode className="w-12 h-12 mx-auto mb-2" />
+                     <p className="text-[10px] font-black uppercase tracking-widest">Código QR no disponible</p>
+                   </div>
+                 )}
+               </div>
+
+               {restaurantSettings.transferUrl && (
+                 <a 
+                   href={restaurantSettings.transferUrl} 
+                   target="_blank" 
+                   rel="noopener noreferrer" 
+                   className="mt-8 flex items-center gap-3 text-blue-600 font-black text-[10px] uppercase tracking-widest hover:underline"
+                 >
+                   Abrir Aplicación del Banco <ExternalLink className="w-4 h-4" />
+                 </a>
+               )}
+             </div>
+
+             <div className="mt-8 space-y-4">
+               <button onClick={handlePayment} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl">YA REALICÉ EL PAGO</button>
+               <button onClick={() => setShowTransferScreen(false)} className="w-full text-[9px] font-black text-slate-400 uppercase tracking-widest">VOLVER AL MÉTODO DE PAGO</button>
+             </div>
+           </div>
+         ) : (
+           <>
+             <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 no-scrollbar">
+                <div className="space-y-4">
+                  {cart.length === 0 ? (
+                    <div className="py-24 text-center opacity-20">
+                      <ShoppingBasket className="w-16 h-16 mx-auto mb-6 text-slate-900" />
+                      <p className="font-black uppercase text-[10px] tracking-[0.3em]">Carrito Vacío</p>
+                    </div>
+                  ) : cart.map((item: any, idx: number) => {
+                    const addsPrice = (item.additions || []).reduce((sum: number, add: any) => sum + add.price, 0);
+                    return (
+                      <div key={idx} className="flex flex-col gap-3 bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100 relative">
+                        <button onClick={() => removeItem(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button>
+                        <div className="flex items-center gap-4">
+                          <img src={item.image} className="w-14 h-14 rounded-xl object-cover shadow-lg shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-black uppercase italic text-slate-900 truncate mb-1">{item.name}</p>
+                            <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest">${formatPrice(item.price + addsPrice)} c/u</p>
+                            <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">CANTIDAD: {item.quantity}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-            {cart.length > 0 && <div className="pt-4 space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /><input type="text" placeholder="Mesa o Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /></div>}
-         </div>
-         <div className="p-6 md:p-10 border-t glass pb-safe">
-            <div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-1 leading-none">Total</span><span className="text-3xl font-black tracking-tighter italic leading-none">${formatPrice(cartTotal)}</span></div>
-            <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-5 rounded-full font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl transition-all btn-press ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white disabled:opacity-20'}`}>{isPaying ? 'Enviando...' : paymentSuccess ? '¡Enviado!' : 'Confirmar Pedido'}</button>
-         </div>
+
+                {cart.length > 0 && (
+                  <>
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Información de Entrega</h4>
+                      <div className="space-y-3">
+                        <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" />
+                        <input type="text" placeholder="Mesa o Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Método de Pago</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button 
+                          onClick={() => setSelectedPaymentMethod('CASH')}
+                          className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-lg scale-105' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}
+                        >
+                          <Banknote className="w-8 h-8" />
+                          <span className="text-[9px] font-black uppercase tracking-widest">Efectivo</span>
+                        </button>
+                        <button 
+                          onClick={() => setSelectedPaymentMethod('TRANSFER')}
+                          className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-lg scale-105' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}
+                        >
+                          <QrCode className="w-8 h-8" />
+                          <span className="text-[9px] font-black uppercase tracking-widest">Transferencia</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+             </div>
+
+             <div className="p-6 md:p-10 border-t glass pb-safe">
+                <div className="flex justify-between items-end mb-6 text-slate-900">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-1 leading-none">Total</span>
+                  <span className="text-3xl font-black tracking-tighter italic leading-none">${formatPrice(cartTotal)}</span>
+                </div>
+                <button 
+                  onClick={handlePayment} 
+                  disabled={cart.length === 0 || isPaying || !customerName} 
+                  className={`w-full py-5 rounded-full font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl transition-all btn-press ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white disabled:opacity-20'}`}
+                >
+                  {isPaying ? 'Enviando...' : paymentSuccess ? '¡Enviado!' : (selectedPaymentMethod === 'TRANSFER' ? 'REALIZAR TRANSFERENCIA' : 'CONFIRMAR PEDIDO')}
+                </button>
+             </div>
+           </>
+         )}
       </div>
     </div>
   );
