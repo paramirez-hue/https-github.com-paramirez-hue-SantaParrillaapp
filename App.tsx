@@ -21,32 +21,34 @@ const formatPrice = (amount: number) => {
 
 const AnimatedFireBackground = () => {
   const sparks = useMemo(() => {
-    return Array.from({ length: 60 }).map((_, i) => ({
+    return Array.from({ length: 80 }).map((_, i) => ({
       id: i,
       left: `${Math.random() * 100}%`,
-      duration: `${3 + Math.random() * 7}s`,
-      delay: `${Math.random() * 10}s`,
-      drift: `${(Math.random() - 0.5) * 300}px`,
-      size: `${1 + Math.random() * 4}px`,
-      rot: `${Math.random() * 360}deg`,
-      opacity: 0.3 + Math.random() * 0.7
+      duration: `${2 + Math.random() * 6}s`,
+      delay: `${Math.random() * 8}s`,
+      drift: `${(Math.random() - 0.5) * 400}px`,
+      size: `${1 + Math.random() * 3}px`,
+      rot: `${Math.random() * 720}deg`,
+      opacity: 0.4 + Math.random() * 0.6
     }));
   }, []);
 
   return (
     <div className="embers-container pointer-events-none">
+      {/* Resplandor base de las brasas */}
       <div 
-        className="absolute bottom-[-20%] left-1/2 -translate-x-1/2 w-[200%] h-[80%] bg-orange-600/20 rounded-[100%] mix-blend-screen"
-        style={{ animation: 'fireGlow 8s infinite ease-in-out', filter: 'blur(120px)' }}
+        className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[150%] h-[50%] bg-orange-900/40 rounded-[100%] mix-blend-screen"
+        style={{ animation: 'fireGlow 6s infinite ease-in-out', filter: 'blur(100px)' }}
       />
+      {/* Núcleo de calor */}
       <div 
-        className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[120%] h-[40%] bg-red-900/30 rounded-[100%] mix-blend-overlay"
-        style={{ animation: 'fireGlow 5s infinite ease-in-out alternate', filter: 'blur(80px)' }}
+        className="absolute bottom-[-5%] left-1/2 -translate-x-1/2 w-[100%] h-[30%] bg-red-600/20 rounded-[100%] mix-blend-overlay"
+        style={{ animation: 'fireGlow 4s infinite ease-in-out alternate', filter: 'blur(70px)' }}
       />
-      <div 
-        className="absolute inset-0 bg-gradient-to-t from-orange-950/20 to-transparent"
-        style={{ animation: 'heatHaze 10s infinite ease-in-out' }}
-      />
+      {/* Distorsión por calor */}
+      <div className="absolute inset-0 bg-gradient-to-t from-orange-950/30 to-transparent" style={{ animation: 'heatHaze 8s infinite ease-in-out' }} />
+      
+      {/* Chispas y brasas voladoras */}
       {sparks.map(spark => (
         <div
           key={spark.id}
@@ -54,7 +56,7 @@ const AnimatedFireBackground = () => {
           style={{
             left: spark.left,
             width: spark.size,
-            height: `calc(${spark.size} * 1.5)`,
+            height: `calc(${spark.size} * 2)`,
             opacity: spark.opacity,
             '--drift': spark.drift,
             '--rot': spark.rot,
@@ -62,7 +64,9 @@ const AnimatedFireBackground = () => {
           } as any}
         />
       ))}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.8)_100%)]" />
+      
+      {/* Viñeteado oscuro para profundidad */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.9)_100%)]" />
     </div>
   );
 };
@@ -241,7 +245,6 @@ const App: React.FC = () => {
     return acc + ((item.price + additionsPrice) * item.quantity);
   }, 0);
 
-  // Lógica mejorada para filtrar platos y adiciones
   const filteredMenu = useMemo(() => {
     if (activeCategory === 'Todas') {
       return menuItems.filter(i => i.category.toLowerCase().trim() !== 'adiciones');
@@ -249,7 +252,6 @@ const App: React.FC = () => {
     return menuItems.filter(i => i.category === activeCategory);
   }, [menuItems, activeCategory]);
 
-  // Filtro de adiciones insensible a mayúsculas
   const additionItems = useMemo(() => {
     return menuItems.filter(i => i.category.toLowerCase().trim() === 'adiciones');
   }, [menuItems]);
@@ -297,13 +299,13 @@ const App: React.FC = () => {
 
   if (!hasEntered) {
     return (
-      <div className="fixed inset-0 z-[500] flex flex-col items-center justify-center p-8">
+      <div className="fixed inset-0 z-[500] flex flex-col items-center justify-center p-8 bg-[#020617]">
         <AnimatedFireBackground />
         
         <div className="relative z-10 text-center space-y-12 animate-fade-scale">
           <div className="relative inline-block">
-             <div className="absolute inset-0 bg-orange-600/30 blur-[100px] rounded-full scale-150 animate-pulse"></div>
-             <div className="w-56 h-56 md:w-80 md:h-80 bg-slate-900 rounded-full p-2 border-4 border-orange-500/20 shadow-[0_0_80px_-10px_rgba(234,88,12,0.8)] relative flex items-center justify-center overflow-hidden">
+             <div className="absolute inset-0 bg-orange-600/20 blur-[120px] rounded-full scale-150 animate-pulse"></div>
+             <div className="w-60 h-60 md:w-80 md:h-80 bg-slate-950 rounded-full p-2 border-4 border-orange-500/20 shadow-[0_0_100px_-20px_rgba(234,88,12,0.6)] relative flex items-center justify-center overflow-hidden">
                <div className="w-full h-full rounded-full overflow-hidden border-2 border-orange-500/40 relative z-10">
                 {restaurantSettings.logoUrl ? (
                   <img src={restaurantSettings.logoUrl} className={`w-full h-full object-cover transition-opacity duration-1000 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} alt="Logo" onLoad={() => setLogoLoaded(true)} />
@@ -311,25 +313,25 @@ const App: React.FC = () => {
                   <div className="w-full h-full bg-slate-900 flex items-center justify-center"><div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>
                 )}
                </div>
-               <div className="absolute inset-0 bg-gradient-to-t from-orange-600/20 to-transparent z-20 pointer-events-none" />
+               <div className="absolute inset-0 bg-gradient-to-t from-orange-600/30 to-transparent z-20 pointer-events-none" />
              </div>
           </div>
           <div className="space-y-4">
-            <span className="font-lettering text-white text-3xl md:text-5xl block opacity-90 tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">Bienvenido a</span>
-            <h1 className="text-6xl md:text-[10rem] font-black text-orange-500 uppercase italic tracking-tighter drop-shadow-[0_15px_15px_rgba(0,0,0,0.7)] leading-none">
-              {restaurantSettings.name}
+            <span className="font-lettering text-orange-200 text-4xl md:text-6xl block opacity-90 tracking-wide drop-shadow-[0_4px_8px_rgba(0,0,0,1)]">Bienvenido a</span>
+            <h1 className="text-6xl md:text-[10rem] font-black text-white uppercase italic tracking-tighter drop-shadow-[0_20px_30px_rgba(0,0,0,0.9)] leading-none">
+              <span className="text-orange-500">{restaurantSettings.name.split(' ')[0]}</span> {restaurantSettings.name.split(' ')[1]}
             </h1>
           </div>
           <button 
             onClick={() => setHasEntered(true)} 
-            className="group relative px-20 py-8 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-base tracking-[0.5em] shadow-[0_20px_40px_-10px_rgba(234,88,12,0.6)] transition-all hover:scale-110 active:scale-95 flex items-center gap-6 mx-auto btn-press"
+            className="group relative px-20 py-8 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-base tracking-[0.5em] shadow-[0_25px_50px_-12px_rgba(234,88,12,0.7)] transition-all hover:scale-110 active:scale-95 flex items-center gap-6 mx-auto btn-press"
           >
             INGRESAR 
             <ArrowRight className="w-7 h-7 group-hover:translate-x-3 transition-transform" />
           </button>
         </div>
-        <div className="absolute bottom-10 left-0 right-0 text-center opacity-40">
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.6em]">SANTA PARRILLA • EXPERIENCIA AHUMADA</p>
+        <div className="absolute bottom-10 left-0 right-0 text-center opacity-50">
+           <p className="text-[10px] font-bold text-orange-200/60 uppercase tracking-[0.6em]">SANTA PARRILLA • EXPERIENCIA AHUMADA</p>
         </div>
       </div>
     );
@@ -396,7 +398,6 @@ const App: React.FC = () => {
                 <div key={item.id} onClick={() => setSelectedFoodForDetail(item)} className="bg-white rounded-[2rem] md:rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-premium flex flex-col group transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 cursor-pointer animate-fade-scale">
                   <div className="h-40 md:h-56 overflow-hidden relative">
                     <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" loading="lazy" />
-                    {/* Ajuste de posición: bottom-left para el precio sobre la imagen */}
                     <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${formatPrice(item.price)}</div>
                   </div>
                   <div className="p-4 md:p-6 flex flex-col flex-1">
@@ -705,7 +706,6 @@ const CategoryForm = ({ category, onSave, onClose }: any) => {
 };
 
 const AdminForm = ({ item, categories, onSave, onClose }: any) => {
-  // Inicializamos data asegurando una categoría válida
   const [data, setData] = useState(() => {
     if (item) return item;
     return { 
@@ -720,7 +720,6 @@ const AdminForm = ({ item, categories, onSave, onClose }: any) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const localFileRef = useRef<HTMLInputElement>(null);
 
-  // Efecto para sincronizar la categoría si la lista carga después de abrir el modal
   useEffect(() => {
     if (!item && categories.length > 0 && !data.category) {
       setData(prev => ({ ...prev, category: categories[0].name }));
