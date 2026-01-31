@@ -90,8 +90,8 @@ const OrderTimer: React.FC<{ startTime: any, status: OrderStatus }> = ({ startTi
   };
 
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold text-white shadow-lg transition-colors ${getColor()}`}>
-      <Timer className="w-3 h-3" /> {elapsed} min
+    <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs md:text-sm font-black text-white shadow-xl transition-all ${getColor()}`}>
+      <Timer className="w-4 h-4" /> {elapsed} min
     </div>
   );
 };
@@ -260,21 +260,21 @@ const App: React.FC = () => {
     switch (status) {
       case OrderStatus.PENDING:
         return {
-          card: 'border-rose-200 bg-rose-50/20',
-          badge: 'bg-rose-600 text-white',
+          card: 'border-rose-100 bg-rose-50/20',
+          badge: 'bg-rose-500 text-white',
           label: 'PENDIENTE',
           btn: 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200',
           btnLabel: 'Recibir Pedido',
-          icon: <AlertCircle className="w-4 h-4" />
+          icon: <AlertCircle className="w-5 h-5" />
         };
       case OrderStatus.PREPARING:
         return {
-          card: 'border-amber-200 bg-amber-50/20',
-          badge: 'bg-amber-500 text-white',
+          card: 'border-amber-100 bg-amber-50/20',
+          badge: 'bg-amber-400 text-white',
           label: 'PREPARANDO',
           btn: 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200',
           btnLabel: 'Terminar Plato',
-          icon: <Play className="w-4 h-4" />
+          icon: <Play className="w-5 h-5" />
         };
       case OrderStatus.READY:
         return {
@@ -282,8 +282,8 @@ const App: React.FC = () => {
           badge: 'bg-emerald-500 text-white',
           label: 'LISTO',
           btn: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
-          btnLabel: 'Entregar Pedido',
-          icon: <PackageCheck className="w-4 h-4" />
+          btnLabel: 'ENTREGAR PEDIDO',
+          icon: <PackageCheck className="w-5 h-5" />
         };
       default:
         return {
@@ -411,44 +411,44 @@ const App: React.FC = () => {
           )}
 
           {isStaffMode && activeView === 'kitchen' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
               {orders.map(order => {
                 const styles = getStatusStyles(order.status);
                 return (
-                  <div key={order.id} className={`bg-white border-2 rounded-[2rem] md:rounded-[2.5rem] shadow-premium overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
-                    <div className="p-6 border-b border-dashed flex justify-between items-center">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${styles.badge}`}>
+                  <div key={order.id} className={`bg-white border-[3px] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
+                    <div className="p-8 pb-6 border-b border-dashed flex justify-between items-start">
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>
                             {styles.label}
                           </span>
-                          <span className="font-mono text-[10px] text-slate-400 font-bold uppercase tracking-widest">MESA • {order.tableNumber}</span>
+                          <span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA • {order.tableNumber}</span>
                         </div>
-                        <p className="text-sm font-black text-slate-900 uppercase italic leading-none">{order.customerName}</p>
+                        <p className="text-3xl font-black text-slate-950 uppercase italic leading-none drop-shadow-sm">{order.customerName}</p>
                       </div>
                       <OrderTimer startTime={order.createdAt} status={order.status} />
                     </div>
-                    <div className="p-8 flex-1 space-y-5">
+                    <div className="p-10 flex-1 space-y-6">
                       {order.items.map((item, idx) => (
-                        <div key={idx} className="space-y-1">
-                          <div className="flex items-center gap-4 text-sm font-bold text-slate-700">
-                            <span className="bg-slate-900 text-white w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black">{item.quantity}</span>
-                            <span className="uppercase truncate flex-1">{item.name}</span>
+                        <div key={idx} className="space-y-2">
+                          <div className="flex items-center gap-5 text-lg font-black text-slate-800">
+                            <span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span>
+                            <span className="uppercase truncate flex-1 tracking-tight">{item.name}</span>
                           </div>
                           {item.additions && item.additions.length > 0 && (
-                            <div className="ml-11 flex flex-wrap gap-1">
+                            <div className="ml-15 flex flex-wrap gap-2">
                               {item.additions.map((add, ai) => (
-                                <span key={ai} className="bg-white/80 text-orange-600 text-[9px] font-bold px-2 py-0.5 rounded-full border border-orange-100">+{add.name}</span>
+                                <span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>
                               ))}
                             </div>
                           )}
                         </div>
                       ))}
                     </div>
-                    <div className="p-8 pt-0">
+                    <div className="p-10 pt-0">
                       <button 
                         onClick={() => updateStatus(order.id, order.status)} 
-                        className={`w-full py-5 rounded-3xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl transition-all btn-press flex items-center justify-center gap-3 ${styles.btn}`}
+                        className={`w-full py-6 rounded-[2rem] text-sm font-black uppercase tracking-[0.2em] shadow-2xl transition-all btn-press flex items-center justify-center gap-4 ${styles.btn}`}
                       >
                         {styles.icon}
                         {styles.btnLabel}
@@ -458,9 +458,9 @@ const App: React.FC = () => {
                 );
               })}
               {orders.length === 0 && (
-                <div className="col-span-full py-32 text-center opacity-20">
-                  <ChefHat className="w-24 h-24 mx-auto mb-8 text-slate-900" />
-                  <p className="font-black uppercase text-xs tracking-[0.4em]">Sin comandas activas</p>
+                <div className="col-span-full py-40 text-center opacity-20">
+                  <ChefHat className="w-32 h-32 mx-auto mb-10 text-slate-900" />
+                  <p className="font-black uppercase text-sm tracking-[0.5em]">Sin comandas activas</p>
                 </div>
               )}
             </div>
@@ -508,7 +508,7 @@ const App: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {menuItems.map(item => (
-                      <div key={item.id} className="bg-white p-6 rounded-[2rem] md:rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6 group hover:border-orange-200 transition-all">
+                      <div key={item.id} className="bg-white p-6 rounded-[2rem] md:rounded-[2.5rem] border border-slate-200 shadow-premium flex items-center gap-6 group hover:border-orange-200 transition-all">
                         <img src={item.image} className="w-16 h-16 md:w-20 md:h-20 rounded-[1.2rem] md:rounded-[1.5rem] object-cover shadow-lg" />
                         <div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div>
                         <div className="flex items-center gap-3">
