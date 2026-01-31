@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
@@ -13,6 +13,11 @@ import { improveDescription, generateFoodImage } from './geminiService';
 const SUPABASE_URL = "https://ejerqcxzvfwnccdadytj.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Y3cEubsUUZwHNOKj1uqasQ_lrzXbdS6";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Función auxiliar para formatear precios: quita el .00 si es entero
+const formatPrice = (amount: number) => {
+  return amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2);
+};
 
 const AnimatedFireBackground = () => {
   const sparks = useMemo(() => {
@@ -62,7 +67,7 @@ const AnimatedFireBackground = () => {
   );
 };
 
-const OrderTimer: React.FC<{ startTime: any }> = ({ startTime }) => {
+const OrderTimer: React.FC<{ startTime: any, status: OrderStatus }> = ({ startTime, status }) => {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const start = typeof startTime === 'string' ? new Date(startTime).getTime() : startTime;
@@ -74,9 +79,10 @@ const OrderTimer: React.FC<{ startTime: any }> = ({ startTime }) => {
   }, [startTime]);
 
   const getColor = () => {
-    if (elapsed > 20) return 'bg-rose-500 shadow-rose-200 animate-pulse';
+    if (status === OrderStatus.READY) return 'bg-emerald-500 shadow-emerald-200';
+    if (elapsed > 20) return 'bg-rose-600 shadow-rose-200 animate-pulse';
     if (elapsed > 10) return 'bg-amber-500 shadow-amber-200';
-    return 'bg-emerald-500 shadow-emerald-200';
+    return 'bg-slate-700 shadow-slate-200';
   };
 
   return (
@@ -91,8 +97,8 @@ const App: React.FC = () => {
   const [isStaffMode, setIsStaffMode] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [activeView, setActiveView] = useState<ViewType>('menu');
-  const [menuItems, setMenuItems] = useState<FoodItem[]>(INITIAL_MENU);
-  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
+  const [menuItems, setMenuItems] = useState<FoodItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
@@ -122,14 +128,10 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
       const { data: menuData } = await supabase.from('menu').select('*');
-      if (menuData && menuData.length > 0) setMenuItems(menuData);
+      setMenuItems(menuData || []);
 
       const { data: catData } = await supabase.from('categories').select('*').order('name');
-      if (catData && catData.length > 0) {
-        setCategories(catData);
-      } else {
-        setCategories(INITIAL_CATEGORIES);
-      }
+      setCategories(catData && catData.length > 0 ? catData : INITIAL_CATEGORIES);
 
       const { data: ordersData } = await supabase
         .from('orders')
@@ -239,8 +241,59 @@ const App: React.FC = () => {
     return acc + ((item.price + additionsPrice) * item.quantity);
   }, 0);
 
-  const filteredMenu = activeCategory === 'Todas' ? menuItems : menuItems.filter(i => i.category === activeCategory);
-  const additionItems = menuItems.filter(i => i.category === 'Adiciones');
+  // Lógica mejorada para filtrar platos y adiciones
+  const filteredMenu = useMemo(() => {
+    if (activeCategory === 'Todas') {
+      return menuItems.filter(i => i.category.toLowerCase().trim() !== 'adiciones');
+    }
+    return menuItems.filter(i => i.category === activeCategory);
+  }, [menuItems, activeCategory]);
+
+  // Filtro de adiciones insensible a mayúsculas
+  const additionItems = useMemo(() => {
+    return menuItems.filter(i => i.category.toLowerCase().trim() === 'adiciones');
+  }, [menuItems]);
+
+  const getStatusStyles = (status: OrderStatus) => {
+    switch (status) {
+      case OrderStatus.PENDING:
+        return {
+          card: 'border-rose-200 bg-rose-50/20',
+          badge: 'bg-rose-600 text-white',
+          label: 'PENDIENTE',
+          btn: 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200',
+          btnLabel: 'Recibir Pedido',
+          icon: <AlertCircle className="w-4 h-4" />
+        };
+      case OrderStatus.PREPARING:
+        return {
+          card: 'border-amber-200 bg-amber-50/20',
+          badge: 'bg-amber-500 text-white',
+          label: 'PREPARANDO',
+          btn: 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200',
+          btnLabel: 'Terminar Plato',
+          icon: <Play className="w-4 h-4" />
+        };
+      case OrderStatus.READY:
+        return {
+          card: 'border-emerald-200 bg-emerald-50/20',
+          badge: 'bg-emerald-500 text-white',
+          label: 'LISTO',
+          btn: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200',
+          btnLabel: 'Entregar Pedido',
+          icon: <PackageCheck className="w-4 h-4" />
+        };
+      default:
+        return {
+          card: 'border-slate-200 bg-white',
+          badge: 'bg-slate-500 text-white',
+          label: 'DESCONOCIDO',
+          btn: 'bg-slate-900 text-white',
+          btnLabel: 'Siguiente',
+          icon: null
+        };
+    }
+  };
 
   if (!hasEntered) {
     return (
@@ -330,7 +383,7 @@ const App: React.FC = () => {
           {!isStaffMode && (
             <button onClick={() => setIsCartOpen(true)} className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl flex items-center gap-4 relative shadow-2xl active:scale-95 transition-all btn-press">
               <ShoppingBag className="w-4 h-4 text-orange-400" />
-              <span className="font-black text-xs tracking-wider">${cartTotal.toFixed(2)}</span>
+              <span className="font-black text-xs tracking-wider">${formatPrice(cartTotal)}</span>
               {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-[#F8F9FA]">{cart.length}</span>}
             </button>
           )}
@@ -343,7 +396,8 @@ const App: React.FC = () => {
                 <div key={item.id} onClick={() => setSelectedFoodForDetail(item)} className="bg-white rounded-[2rem] md:rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-premium flex flex-col group transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 cursor-pointer animate-fade-scale">
                   <div className="h-40 md:h-56 overflow-hidden relative">
                     <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" loading="lazy" />
-                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${item.price.toFixed(2)}</div>
+                    {/* Ajuste de posición: bottom-left para el precio sobre la imagen */}
+                    <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${formatPrice(item.price)}</div>
                   </div>
                   <div className="p-4 md:p-6 flex flex-col flex-1">
                     <h3 className="text-xs md:text-lg font-black text-slate-900 uppercase italic mb-1 md:mb-2 truncate">{item.name}</h3>
@@ -357,35 +411,57 @@ const App: React.FC = () => {
 
           {isStaffMode && activeView === 'kitchen' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {orders.map(order => (
-                <div key={order.id} className="bg-white border border-slate-200 rounded-[2rem] md:rounded-[2.5rem] shadow-premium overflow-hidden flex flex-col relative animate-fade-scale">
-                  <div className="p-6 border-b border-dashed flex justify-between items-center bg-slate-50/50">
-                    <div>
-                      <span className="font-mono text-[10px] text-slate-400 font-bold uppercase block mb-1">MESA • {order.tableNumber}</span>
-                      <p className="text-sm font-black text-slate-900 uppercase italic leading-none">{order.customerName}</p>
-                    </div>
-                    <OrderTimer startTime={order.createdAt} />
-                  </div>
-                  <div className="p-8 flex-1 space-y-5">
-                    {order.items.map((item, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex items-center gap-4 text-sm font-bold text-slate-700">
-                          <span className="bg-slate-900 text-white w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black">{item.quantity}</span>
-                          <span className="uppercase truncate flex-1">{item.name}</span>
+              {orders.map(order => {
+                const styles = getStatusStyles(order.status);
+                return (
+                  <div key={order.id} className={`bg-white border-2 rounded-[2rem] md:rounded-[2.5rem] shadow-premium overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
+                    <div className="p-6 border-b border-dashed flex justify-between items-center">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${styles.badge}`}>
+                            {styles.label}
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-400 font-bold uppercase tracking-widest">MESA • {order.tableNumber}</span>
                         </div>
-                        {item.additions && item.additions.length > 0 && (
-                          <div className="ml-11 flex flex-wrap gap-1">
-                            {item.additions.map((add, ai) => (
-                              <span key={ai} className="bg-orange-50 text-orange-600 text-[9px] font-bold px-2 py-0.5 rounded-full border border-orange-100">+{add.name}</span>
-                            ))}
-                          </div>
-                        )}
+                        <p className="text-sm font-black text-slate-900 uppercase italic leading-none">{order.customerName}</p>
                       </div>
-                    ))}
+                      <OrderTimer startTime={order.createdAt} status={order.status} />
+                    </div>
+                    <div className="p-8 flex-1 space-y-5">
+                      {order.items.map((item, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex items-center gap-4 text-sm font-bold text-slate-700">
+                            <span className="bg-slate-900 text-white w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black">{item.quantity}</span>
+                            <span className="uppercase truncate flex-1">{item.name}</span>
+                          </div>
+                          {item.additions && item.additions.length > 0 && (
+                            <div className="ml-11 flex flex-wrap gap-1">
+                              {item.additions.map((add, ai) => (
+                                <span key={ai} className="bg-white/80 text-orange-600 text-[9px] font-bold px-2 py-0.5 rounded-full border border-orange-100">+{add.name}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="p-8 pt-0">
+                      <button 
+                        onClick={() => updateStatus(order.id, order.status)} 
+                        className={`w-full py-5 rounded-3xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl transition-all btn-press flex items-center justify-center gap-3 ${styles.btn}`}
+                      >
+                        {styles.icon}
+                        {styles.btnLabel}
+                      </button>
+                    </div>
                   </div>
-                  <div className="p-8 pt-0"><button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-5 rounded-3xl text-[11px] font-black uppercase tracking-widest shadow-xl transition-all btn-press ${order.status === 'READY' ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-900 text-white'}`}>{order.status === 'PENDING' ? 'Recibir' : order.status === 'PREPARING' ? 'Listo' : 'Entregado'}</button></div>
+                );
+              })}
+              {orders.length === 0 && (
+                <div className="col-span-full py-32 text-center opacity-20">
+                  <ChefHat className="w-24 h-24 mx-auto mb-8 text-slate-900" />
+                  <p className="font-black uppercase text-xs tracking-[0.4em]">Sin comandas activas</p>
                 </div>
-              ))}
+              )}
             </div>
           )}
 
@@ -507,7 +583,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
                 </div>
                 <div className="text-right shrink-0">
                   <span className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Subtotal</span>
-                  <span className="text-2xl md:text-4xl font-black text-slate-900 italic tracking-tighter leading-none">${totalPrice.toFixed(2)}</span>
+                  <span className="text-2xl md:text-4xl font-black text-slate-900 italic tracking-tighter leading-none">${formatPrice(totalPrice)}</span>
                 </div>
              </div>
           </div>
@@ -522,7 +598,9 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
               <span className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest">Opcional</span>
             </div>
             <div className="grid grid-cols-1 gap-2 md:gap-3">
-              {additions.map(add => {
+              {additions.length === 0 ? (
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-4 italic">No hay adiciones disponibles para este plato</p>
+              ) : additions.map(add => {
                 const isSelected = selectedAdds.find(i => i.id === add.id);
                 return (
                   <button 
@@ -536,7 +614,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
                       </div>
                       <div>
                         <p className="text-[10px] md:text-[11px] font-black uppercase italic leading-none mb-1">{add.name}</p>
-                        <p className={`text-[9px] md:text-[10px] font-bold ${isSelected ? 'text-orange-200' : 'text-slate-400'}`}>+${add.price.toFixed(2)}</p>
+                        <p className={`text-[9px] md:text-[10px] font-bold ${isSelected ? 'text-orange-200' : 'text-slate-400'}`}>+${formatPrice(add.price)}</p>
                       </div>
                     </div>
                     {isSelected && <Check className="w-4 h-4 md:w-5 md:h-5 animate-in zoom-in" />}
@@ -585,7 +663,7 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
                     <img src={item.image} className="w-14 h-14 md:w-16 md:h-16 rounded-xl md:rounded-2xl object-cover shadow-lg shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] md:text-xs font-black uppercase italic text-slate-900 truncate mb-1">{item.name}</p>
-                      <p className="text-[9px] md:text-[10px] font-black text-orange-600 uppercase tracking-widest">${(item.price + additionsPrice).toFixed(2)} c/u</p>
+                      <p className="text-[9px] md:text-[10px] font-black text-orange-600 uppercase tracking-widest">${formatPrice(item.price + additionsPrice)} c/u</p>
                       <p className="text-[9px] md:text-[10px] font-bold text-slate-400 mt-1 md:mt-2 uppercase tracking-tighter">CANTIDAD: {item.quantity}</p>
                     </div>
                   </div>
@@ -602,7 +680,7 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
             {cart.length > 0 && <div className="pt-4 md:pt-8 space-y-3 md:space-y-4"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-3xl outline-none font-black text-[10px] md:text-xs uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /><input type="text" placeholder="Nro de Mesa o Lugar" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-3xl outline-none font-black text-[10px] md:text-xs uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /></div>}
          </div>
          <div className="p-6 md:p-10 border-t glass pb-safe">
-            <div className="flex justify-between items-end mb-6 md:mb-10 text-slate-900"><span className="text-[10px] md:text-[11px] font-black uppercase text-slate-400 tracking-[0.3em] md:tracking-[0.4em] mb-1 md:mb-2 leading-none">Total</span><span className="text-3xl md:text-5xl font-black tracking-tighter italic leading-none">${cartTotal.toFixed(2)}</span></div>
+            <div className="flex justify-between items-end mb-6 md:mb-10 text-slate-900"><span className="text-[10px] md:text-[11px] font-black uppercase text-slate-400 tracking-[0.3em] md:tracking-[0.4em] mb-1 md:mb-2 leading-none">Total</span><span className="text-3xl md:text-5xl font-black tracking-tighter italic leading-none">${formatPrice(cartTotal)}</span></div>
             <button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-5 md:py-6 rounded-full font-black text-[10px] md:text-xs uppercase tracking-[0.2em] md:tracking-[0.3em] shadow-2xl transition-all btn-press ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white disabled:opacity-20'}`}>{isPaying ? 'Enviando...' : paymentSuccess ? '¡Enviado!' : 'Hacer Pedido'}</button>
          </div>
       </div>
@@ -627,9 +705,27 @@ const CategoryForm = ({ category, onSave, onClose }: any) => {
 };
 
 const AdminForm = ({ item, categories, onSave, onClose }: any) => {
-  const [data, setData] = useState(item || { name: '', price: 0, category: categories[0]?.name || '', image: '', description: '' });
+  // Inicializamos data asegurando una categoría válida
+  const [data, setData] = useState(() => {
+    if (item) return item;
+    return { 
+      name: '', 
+      price: 0, 
+      category: categories.length > 0 ? categories[0].name : '', 
+      image: '', 
+      description: '' 
+    };
+  });
+
   const [isGenerating, setIsGenerating] = useState(false);
   const localFileRef = useRef<HTMLInputElement>(null);
+
+  // Efecto para sincronizar la categoría si la lista carga después de abrir el modal
+  useEffect(() => {
+    if (!item && categories.length > 0 && !data.category) {
+      setData(prev => ({ ...prev, category: categories[0].name }));
+    }
+  }, [categories, item, data.category]);
 
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -653,13 +749,16 @@ const AdminForm = ({ item, categories, onSave, onClose }: any) => {
             <div className="grid grid-cols-2 gap-4 md:gap-6">
               <div className="space-y-1.5 md:space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Precio</label>
-                <input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value)})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-3xl font-black text-sm outline-none border border-slate-200 shadow-inner" placeholder="0.00" />
+                <input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-3xl font-black text-sm outline-none border border-slate-200 shadow-inner" placeholder="0.00" />
               </div>
               <div className="space-y-1.5 md:space-y-2">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Categoría</label>
-                <select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-3xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none">
-                  {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
+                <div className="relative">
+                  <select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 md:p-6 bg-slate-50 rounded-2xl md:rounded-3xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">
+                    {categories.length === 0 ? <option value="">Sin categorías</option> : categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                  <ChevronRight className="w-4 h-4 absolute right-5 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" />
+                </div>
               </div>
             </div>
 
