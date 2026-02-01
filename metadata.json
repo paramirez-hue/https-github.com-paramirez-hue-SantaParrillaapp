@@ -8,9 +8,9 @@
   "theme_color": "#020617",
   "icons": [
     {
-      "src": "https://drive.google.com/file/d/1bX3yYqIvNq6oKIQljAlsUk0Up5IfW8-P/view?usp=drive_link",
+      "src": "https://ejerqcxzvfwnccdadytj.supabase.co/storage/v1/object/sign/icono/SANTA%20PARRILLA2.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8zOGViNDg4NC1lZGI1LTQzMzItYmY5My0xNzg2ZTlkNTdhYTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJpY29uby9TQU5UQSBQQVJSSUxMQTIucG5nIiwiaWF0IjoxNzY5OTIyMTIyLCJleHAiOjg2NDAwMDAwMDAxNzY5ODMwMDAwfQ.-Dlj7OYlNm-j0nFzLera5-_hEakS5cfd-LecbPxAi6E",
       "sizes": "512x512",
-      "type": "image/ico"
+      "type": "image/pgn"
     }
   ],
   "requestFramePermissions": []
