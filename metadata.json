@@ -4,11 +4,11 @@
   "description": "Sistema profesional de gestión de pedidos con IA",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#FAF9F6",
+  "background_color": "#020617",
   "theme_color": "#020617",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3075/3075977.png",
+      "src": "https://ejerqcxzvfwnccdadytj.supabase.co/storage/v1/object/sign/icono/SANTA%20PARRILLA2.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8zOGViNDg4NC1lZGI1LTQzMzItYmY5My0xNzg2ZTlkNTdhYTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJpY29uby9TQU5UQSBQQVJSSUxMQTIucG5nIiwiaWF0IjoxNzY5OTIyMTIyLCJleHAiOjg2NDAwMDAwMDAxNzY5ODMwMDAwfQ.-Dlj7OYlNm-j0nFzLera5-_hEakS5cfd-LecbPxAi6E",
       "sizes": "512x512",
       "type": "image/png"
     }
