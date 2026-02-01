@@ -3,8 +3,7 @@ import { FoodItem, Category } from './types';
 
 export const DEFAULT_BRANDING = {
   name: 'Santa Parrilla',
-  // He convertido la imagen proporcionada a un formato accesible para la app
-  logoUrl: 'https://ejerqcxzvfwnccdadytj.supabase.co/storage/v1/object/sign/icono/SANTA%20PARRILLA2.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8zOGViNDg4NC1lZGI1LTQzMzItYmY5My0xNzg2ZTlkNTdhYTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJpY29uby9TQU5UQSBQQVJSSUxMQTIucG5nIiwiaWF0IjoxNzY5OTIyMTIyLCJleHAiOjg2NDAwMDAwMDAxNzY5ODMwMDAwfQ.-Dlj7OYlNm-j0nFzLera5-_hEakS5cfd-LecbPxAi6E'
+   logoUrl: 'https://ejerqcxzvfwnccdadytj.supabase.co/storage/v1/object/sign/icono/SANTA%20PARRILLA2.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8zOGViNDg4NC1lZGI1LTQzMzItYmY5My0xNzg2ZTlkNTdhYTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJpY29uby9TQU5UQSBQQVJSSUxMQTIucG5nIiwiaWF0IjoxNzY5OTIyMTIyLCJleHAiOjg2NDAwMDAwMDAxNzY5ODMwMDAwfQ.-Dlj7OYlNm-j0nFzLera5-_hEakS5cfd-LecbPxAi6E'
 };
 
 export const INITIAL_MENU: FoodItem[] = [
