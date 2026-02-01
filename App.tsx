@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
@@ -19,29 +20,25 @@ const formatPrice = (amount: number) => {
 
 const AnimatedFireBackground = () => {
   const sparks = useMemo(() => {
-    return Array.from({ length: 80 }).map((_, i) => ({
+    return Array.from({ length: 60 }).map((_, i) => ({
       id: i,
       left: `${Math.random() * 100}%`,
-      duration: `${2 + Math.random() * 6}s`,
-      delay: `${Math.random() * 8}s`,
-      drift: `${(Math.random() - 0.5) * 400}px`,
-      size: `${1 + Math.random() * 3}px`,
-      rot: `${Math.random() * 720}deg`,
-      opacity: 0.4 + Math.random() * 0.6
+      duration: `${3 + Math.random() * 5}s`,
+      delay: `${Math.random() * 5}s`,
+      drift: `${(Math.random() - 0.5) * 300}px`,
+      size: `${1 + Math.random() * 2}px`,
+      rot: `${Math.random() * 360}deg`,
+      opacity: 0.3 + Math.random() * 0.5
     }));
   }, []);
 
   return (
     <div className="embers-container pointer-events-none">
       <div 
-        className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[150%] h-[50%] bg-orange-900/40 rounded-[100%] mix-blend-screen"
-        style={{ animation: 'fireGlow 6s infinite ease-in-out', filter: 'blur(100px)' }}
+        className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[150%] h-[50%] bg-orange-950/20 rounded-[100%] mix-blend-screen"
+        style={{ animation: 'fireGlow 8s infinite ease-in-out', filter: 'blur(120px)' }}
       />
-      <div 
-        className="absolute bottom-[-5%] left-1/2 -translate-x-1/2 w-[100%] h-[30%] bg-red-600/20 rounded-[100%] mix-blend-overlay"
-        style={{ animation: 'fireGlow 4s infinite ease-in-out alternate', filter: 'blur(70px)' }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-orange-950/30 to-transparent" style={{ animation: 'heatHaze 8s infinite ease-in-out' }} />
+      <div className="absolute inset-0 bg-gradient-to-t from-orange-950/10 to-transparent" style={{ animation: 'heatHaze 10s infinite ease-in-out' }} />
       {sparks.map(spark => (
         <div
           key={spark.id}
@@ -49,7 +46,7 @@ const AnimatedFireBackground = () => {
           style={{
             left: spark.left,
             width: spark.size,
-            height: `calc(${spark.size} * 2)`,
+            height: `calc(${spark.size} * 2.5)`,
             opacity: spark.opacity,
             '--drift': spark.drift,
             '--rot': spark.rot,
@@ -57,7 +54,7 @@ const AnimatedFireBackground = () => {
           } as any}
         />
       ))}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.9)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.95)_100%)]" />
     </div>
   );
 };
@@ -110,8 +107,8 @@ const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedFoodForDetail, setSelectedFoodForDetail] = useState<FoodItem | null>(null);
+  const [logoLoaded, setLogoLoaded] = useState(false);
   
-  // Seguimiento de pedido cliente
   const [currentOrderTrackingId, setCurrentOrderTrackingId] = useState<string | null>(() => localStorage.getItem('active_order_id'));
   const [showTrackingView, setShowTrackingView] = useState(false);
 
@@ -123,7 +120,6 @@ const App: React.FC = () => {
 
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
-  const [logoLoaded, setLogoLoaded] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -324,25 +320,48 @@ const App: React.FC = () => {
 
   if (!hasEntered) {
     return (
-      <div className="fixed inset-0 z-[500] flex flex-col items-center justify-center p-8 bg-[#020617]">
+      <div className="fixed inset-0 z-[500] flex flex-col items-center justify-between py-20 px-8 bg-[#020617] overflow-hidden">
         <AnimatedFireBackground />
-        <div className="relative z-10 text-center space-y-12 animate-fade-scale">
-          <div className="relative inline-block">
-             <div className="absolute inset-0 bg-orange-600/20 blur-[120px] rounded-full scale-150 animate-pulse"></div>
-             <div className="w-60 h-60 md:w-80 md:h-80 bg-slate-950 rounded-full p-2 border-4 border-orange-500/20 shadow-2xl relative flex items-center justify-center overflow-hidden">
-                <div className="w-full h-full rounded-full overflow-hidden border-2 border-orange-500/40 relative z-10">
-                {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className={`w-full h-full object-cover transition-opacity duration-1000 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLogoLoaded(true)} /> : <div className="w-full h-full bg-slate-900 flex items-center justify-center"><div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>}
-                </div>
-             </div>
-          </div>
-          <div className="space-y-4">
-            <span className="font-lettering text-orange-200 text-4xl md:text-6xl block opacity-90 tracking-wide">Bienvenido a</span>
-            <h1 className="text-6xl md:text-[8rem] font-black text-white uppercase italic tracking-tighter leading-none"><span className="text-orange-500">{restaurantSettings.name.split(' ')[0]}</span> {restaurantSettings.name.split(' ')[1]}</h1>
-          </div>
-          <div className="flex flex-col items-center gap-4">
-            <button onClick={() => setHasEntered(true)} className="group relative px-12 py-5 bg-orange-600 hover:bg-orange-500 text-white rounded-full font-black uppercase text-sm tracking-[0.4em] shadow-xl transition-all hover:scale-110 active:scale-95 flex items-center gap-4 mx-auto btn-press">INGRESAR <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" /></button>
-            <p className="text-[10px] text-white/30 font-medium tracking-tight mt-2 italic uppercase">Creado por: Pablo Ramirez-pabloramirez9639@gmail.com</p>
-          </div>
+        
+        {/* Bienvenido a */}
+        <div className="relative z-10 text-center animate-fade-scale">
+          <span className="font-lettering text-orange-100/90 text-5xl md:text-7xl block tracking-wide drop-shadow-lg">
+            Bienvenido a
+          </span>
+        </div>
+
+        {/* Logo Circular */}
+        <div className="relative z-10 animate-fade-scale delay-100 flex items-center justify-center">
+           <div className="absolute inset-0 bg-orange-600/10 blur-[100px] rounded-full scale-125"></div>
+           <div className="w-64 h-64 md:w-80 md:h-80 rounded-full border-[10px] border-slate-900 shadow-[0_0_50px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden bg-slate-950 p-2">
+              <div className="w-full h-full rounded-full overflow-hidden border-2 border-orange-500/20 relative">
+                {restaurantSettings.logoUrl ? (
+                  <img 
+                    src={restaurantSettings.logoUrl} 
+                    className={`w-full h-full object-contain transition-opacity duration-1000 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} 
+                    onLoad={() => setLogoLoaded(true)} 
+                  />
+                ) : (
+                  <div className="w-full h-full bg-slate-900 flex items-center justify-center">
+                    <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+           </div>
+        </div>
+
+        {/* Botón Ingresar */}
+        <div className="relative z-10 w-full max-w-xs flex flex-col items-center gap-12">
+          <button 
+            onClick={() => setHasEntered(true)} 
+            className="w-full py-4.5 bg-[#F97316] hover:bg-orange-500 text-white rounded-full font-black uppercase text-base tracking-[0.2em] shadow-[0_10px_30px_rgba(249,115,22,0.3)] transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-4 btn-press border-b-4 border-orange-700"
+          >
+            INGRESAR <ArrowRight className="w-6 h-6" />
+          </button>
+          
+          <p className="text-[10px] text-white/20 font-bold tracking-widest text-center uppercase">
+            CREADO POR: PABLO RAMIREZ - PABLORAMIREZ9639@GMAIL.COM
+          </p>
         </div>
       </div>
     );
@@ -432,15 +451,6 @@ const App: React.FC = () => {
                   <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">{isExporting ? <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-8 h-8" />}</div>
                   <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Cerrar Semana</p><p className="text-[10px] font-bold opacity-70 uppercase">Backup en Sheets y Limpiar Datos</p></div>
                </button>
-               <div className="bg-white rounded-[3rem] border border-slate-100 shadow-premium overflow-hidden">
-                  <div className="p-10 border-b border-slate-50 flex justify-between items-center"><h4 className="text-xl font-black italic uppercase tracking-tighter text-slate-900">Ranking</h4></div>
-                  <table className="w-full">
-                    <thead><tr className="bg-slate-50/50"><th className="text-left px-10 py-6 text-[10px] font-black uppercase text-slate-400">Producto</th><th className="text-center px-10 py-6 text-[10px] font-black uppercase text-slate-400">Ventas</th><th className="text-right px-10 py-6 text-[10px] font-black uppercase text-slate-400">Total</th></tr></thead>
-                    <tbody className="divide-y divide-slate-50">{salesReport.items.map((item, idx) => (
-                      <tr key={idx}><td className="px-10 py-6 font-black text-sm uppercase italic text-slate-900">{item.name}</td><td className="px-10 py-6 text-center font-black text-xs text-slate-600">{item.quantity}</td><td className="px-10 py-6 text-right font-black text-sm text-slate-900">${formatPrice(item.total)}</td></tr>
-                    ))}</tbody>
-                  </table>
-               </div>
             </div>
           )}
 
@@ -459,7 +469,6 @@ const App: React.FC = () => {
                   </div>
                 );
               })}
-              {orders.length === 0 && <div className="col-span-full py-40 text-center opacity-20"><ChefHat className="w-32 h-32 mx-auto mb-10 text-slate-900" /><p className="font-black uppercase text-sm tracking-[0.5em]">Sin preparaciones activas</p></div>}
             </div>
           )}
 
@@ -548,7 +557,7 @@ const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => vo
              <div className={`w-48 h-48 md:w-64 md:h-64 rounded-full border-[6px] border-orange-500/20 flex items-center justify-center relative ${order.status === OrderStatus.READY ? 'shadow-[0_0_80px_rgba(249,115,22,0.4)] animate-pulse' : ''}`}>
                 <div className="absolute inset-4 rounded-full border-2 border-dashed border-orange-500/30 animate-spin-slow" />
                 <div className="flex flex-col items-center gap-4">
-                  <div className="w-20 h-20 md:w-28 md:h-28 bg-orange-600 rounded-3xl md:rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl animate-bounce">
+                  <div className="w-20 h-20 md:w-28 md:h-28 bg-orange-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl animate-bounce">
                     {steps[currentIdx]?.icon}
                   </div>
                   <div className="space-y-1">
