@@ -1,23 +1,16 @@
 {
   "name": "Santa Parrilla App",
   "short_name": "SantaParrilla",
-  "description": "Gestión profesional de pedidos Santa Parrilla",
+  "description": "Sistema profesional de gestión de pedidos con IA",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#020617",
+  "background_color": "#FAF9F6",
   "theme_color": "#020617",
   "icons": [
     {
-      "src": "https://ejerqcxzvfwnccdadytj.supabase.co/storage/v1/object/public/assets/santa-parrilla-logo.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "https://ejerqcxzvfwnccdadytj.supabase.co/storage/v1/object/public/assets/santa-parrilla-logo.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/3075/3075977.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
     }
   ],
   "requestFramePermissions": []
