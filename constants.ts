@@ -3,7 +3,7 @@ import { FoodItem, Category } from './types';
 
 export const DEFAULT_BRANDING = {
   name: 'Santa Parrilla',
-  logoUrl: 'https://cdn-user-icons.flaticon.com/72202/72202001/1769919579626.svg?token=exp=1769920648~hmac=9f7f47a85b0fb331afb5ad6f017125f6'
+  logoUrl: 'https://cdn-user-icons.flaticon.com/72202/72202001/1769919579626.svg'
 };
 
 export const INITIAL_MENU: FoodItem[] = [
