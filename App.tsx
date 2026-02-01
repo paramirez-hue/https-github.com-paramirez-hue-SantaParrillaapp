@@ -86,12 +86,9 @@ const App: React.FC = () => {
   const [isPaying, setIsPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [isAdminFormOpen, setIsAdminFormOpen] = useState(false);
-  const [isCategoryFormOpen, setIsCategoryFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedFoodForDetail, setSelectedFoodForDetail] = useState<FoodItem | null>(null);
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
-  const [showWebhookHelp, setShowWebhookHelp] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('CASH');
   const [showTransferScreen, setShowTransferScreen] = useState(false);
   
@@ -152,9 +149,8 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
     const menuSub = supabase.channel('menu-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData).subscribe();
-    const catSub = supabase.channel('cat-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchData).subscribe();
     const ordersSub = supabase.channel('ord-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchData).subscribe();
-    return () => { supabase.removeChannel(menuSub); supabase.removeChannel(catSub); supabase.removeChannel(ordersSub); };
+    return () => { supabase.removeChannel(menuSub); supabase.removeChannel(ordersSub); };
   }, [isStaffMode]);
 
   useEffect(() => { if (activeView === 'stats') fetchHistory(); }, [activeView]);
@@ -196,8 +192,7 @@ const App: React.FC = () => {
   const handleResetHistory = async () => {
     if (!confirm("⚠️ ¿Reiniciar reportes? Se borrará todo el historial.")) return;
     try {
-      const { error } = await supabase.from('orders').delete().neq('id', '0');
-      if (error) throw error;
+      await supabase.from('orders').delete().neq('id', '0');
       alert("¡Reporte reiniciado!");
       fetchHistory(); fetchData();
     } catch (err: any) { alert("Error: " + err.message); }
@@ -253,12 +248,6 @@ const App: React.FC = () => {
   const handleDeleteItem = async (id: string) => {
     if (!confirm("¿Eliminar?")) return;
     await supabase.from('menu').delete().eq('id', id);
-    fetchData();
-  };
-
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm("¿Eliminar categoría?")) return;
-    await supabase.from('categories').delete().eq('id', id);
     fetchData();
   };
 
@@ -366,7 +355,7 @@ const App: React.FC = () => {
             <SidebarItem icon={<LayoutGrid className="w-5 h-5" />} label="Menú" active={activeCategory === 'Todas'} onClick={() => {setActiveCategory('Todas'); setIsMobileMenuOpen(false);}} />
             {categories.map(c => <SidebarItem key={c.id} icon={<span className="text-lg">{c.icon}</span>} label={c.name} active={activeCategory === c.name} onClick={() => {setActiveCategory(c.name); setIsMobileMenuOpen(false);}} />)}
             {trackedOrder && <SidebarItem icon={<Timer className="w-5 h-5" />} label="Estado" active={showTrackingView} onClick={() => {setShowTrackingView(true); setIsMobileMenuOpen(false);}} />}
-            <div className="pt-10 border-t border-white/5 mt-6"><button onClick={() => {setShowLogin(true); setIsMobileMenuOpen(false);}} className="w-full p-5 text-white/40 hover:text-white rounded-3xl flex items-center gap-4 font-black text-[9px] uppercase tracking-widest border border-white/5 transition-all"><Lock className="w-4 h-4" /> Acceso Staff</button></div>
+            <div className="pt-10 border-t border-white/5 mt-6"><button onClick={() => {setShowLogin(true); setIsMobileMenuOpen(false);}} className="w-full p-5 text-white/40 hover:text-white rounded-3xl flex items-center gap-4 font-black text-[9px] uppercase tracking-widest border border-white/5 transition-all"><Lock className="w-4 h-4" /> Staff</button></div>
           </>
         )}
       </nav>
@@ -417,17 +406,17 @@ const App: React.FC = () => {
                   </div>
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6">
                     <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center shadow-inner"><TrendingUp className="w-8 h-8" /></div>
-                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Ítems Vendidos</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.items.reduce((acc, curr) => acc + curr.quantity, 0)}</h4></div>
+                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Ítems</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.items.reduce((acc, curr) => acc + curr.quantity, 0)}</h4></div>
                   </div>
                </div>
                <div className="flex flex-col sm:flex-row gap-4">
-                  <button onClick={handleExportAndCleanup} disabled={isExporting} className="flex-1 bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 group hover:bg-slate-800 transition-all">
+                  <button onClick={handleExportAndCleanup} disabled={isExporting} className="flex-1 bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 hover:bg-slate-800 transition-all">
                     <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">{isExporting ? <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-8 h-8" />}</div>
                     <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Cierre Semanal</p><p className="text-[10px] font-bold opacity-70 uppercase">Exportar a Sheets</p></div>
                   </button>
                   <button onClick={handleResetHistory} className="bg-rose-600 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 hover:bg-rose-700 transition-all">
                     <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center"><RefreshCcw className="w-8 h-8" /></div>
-                    <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Limpiar Datos</p><p className="text-[10px] font-bold opacity-70 uppercase">Empezar de Cero</p></div>
+                    <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Reiniciar Todo</p><p className="text-[10px] font-bold opacity-70 uppercase">Limpiar historial</p></div>
                   </button>
                </div>
             </div>
@@ -461,17 +450,60 @@ const App: React.FC = () => {
           {isStaffMode && activeView === 'admin' && (
             <div className="max-w-4xl mx-auto space-y-12 pb-20">
                 <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-slate-200 shadow-premium">
-                    <div className="flex justify-between items-center mb-10"><div><h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter text-slate-900">Configuración</h4></div><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase shadow-xl transition-all ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{brandingSaved ? 'Guardado' : 'Guardar'}</button></div>
-                    <div className="space-y-6">
-                      <div className="flex flex-col md:flex-row gap-6 items-center"><div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0" onClick={() => fileInputRef.current?.click()}>{restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}</div><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Webhook Sheets</label><div className="relative"><input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 pr-14 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" /><button onClick={handleTestWebhook} disabled={isTestingWebhook} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-600">{isTestingWebhook ? <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent animate-spin rounded-full" /> : <Send className="w-5 h-5" />}</button></div></div>
-                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">URL Transferencia</label><input type="text" value={restaurantSettings.transferUrl} onChange={e => setRestaurantSettings({...restaurantSettings, transferUrl: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" /></div>
+                    <div className="flex justify-between items-center mb-10"><div><h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter text-slate-900">Configuración</h4></div><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase shadow-xl transition-all ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{brandingSaved ? '¡Guardado!' : 'Guardar'}</button></div>
+                    <div className="space-y-8">
+                      {/* Logo y Nombre */}
+                      <div className="flex flex-col md:flex-row gap-6 items-center">
+                        <div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0 shadow-lg" onClick={() => fileInputRef.current?.click()}>
+                          {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}
+                        </div>
+                        <div className="flex-1 w-full space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre del Local</label>
+                          <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Santa Parrilla" />
+                        </div>
+                        <input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
+                      </div>
+
+                      {/* Carga de QR y Webhook */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-slate-100">
+                        {/* QR Section */}
+                        <div className="space-y-4">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Código QR para Transferencias</label>
+                          <div className="w-full aspect-square bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all shadow-inner" onClick={() => qrInputRef.current?.click()}>
+                            {restaurantSettings.qrUrl ? (
+                              <img src={restaurantSettings.qrUrl} className="w-full h-full object-contain p-4" />
+                            ) : (
+                              <div className="text-center">
+                                <QrCode className="w-12 h-12 text-slate-300 group-hover:text-orange-500 mx-auto mb-2" />
+                                <p className="text-[10px] font-black text-slate-400 uppercase">Click para Subir</p>
+                              </div>
+                            )}
+                          </div>
+                          <input type="file" ref={qrInputRef} onChange={handleQrUpload} className="hidden" accept="image/*" />
+                        </div>
+
+                        {/* Config URLs */}
+                        <div className="space-y-6 flex flex-col justify-between">
+                           <div className="space-y-2">
+                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Webhook Google Sheets</label>
+                             <div className="relative">
+                               <input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 pr-14 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://script.google.com/..." />
+                               <button onClick={handleTestWebhook} disabled={isTestingWebhook} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-600">
+                                 {isTestingWebhook ? <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent animate-spin rounded-full" /> : <Send className="w-5 h-5" />}
+                               </button>
+                             </div>
+                           </div>
+                           <div className="space-y-2">
+                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">URL App del Banco (Opcional)</label>
+                             <input type="text" value={restaurantSettings.transferUrl} onChange={e => setRestaurantSettings({...restaurantSettings, transferUrl: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://app.nequi.com.co" />
+                           </div>
+                        </div>
                       </div>
                     </div>
                 </div>
-                <div className="flex justify-between items-center px-6"><h4 className="text-xl font-black italic uppercase text-slate-900">Carta</h4><button onClick={() => setIsAdminFormOpen(true)} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo Plato</button></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase">{item.category}</p></div><div className="flex gap-2"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
+
+                <div className="flex justify-between items-center px-6"><h4 className="text-xl font-black italic uppercase text-slate-900">Carta de Productos</h4><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl hover:scale-105 transition-all"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo Plato</button></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6 shadow-sm"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-inner" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase">{item.category}</p></div><div className="flex gap-2"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
             </div>
           )}
         </main>
@@ -481,9 +513,9 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[600] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-12 text-center shadow-2xl animate-in zoom-in duration-300">
              <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">PIN de Staff</p>
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Ingresa PIN de Staff</p>
              <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
-             <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cerrar</button>
+             <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">Cancelar</button>
           </div>
         </div>
       )}
@@ -500,7 +532,7 @@ const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
   <button onClick={onClick} className={`relative w-full p-4 flex items-center gap-4 rounded-[1.5rem] transition-all group ${active ? 'bg-orange-600 text-white shadow-orange-glow' : 'text-white/40 hover:bg-white/5 hover:text-white'}`}>
     <div className={`transition-all ${active ? 'scale-110' : 'group-hover:scale-110'}`}>{icon}</div>
     <span className="text-[10px] font-black uppercase tracking-widest text-left truncate">{label}</span>
-    {badge > 0 && <span className="absolute top-2 right-2 bg-white text-orange-600 text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-lg shadow-lg">{badge}</span>}
+    {badge > 0 && <span className="absolute top-2 right-2 bg-white text-orange-600 text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-lg shadow-lg border border-orange-100">{badge}</span>}
   </button>
 );
 
@@ -570,16 +602,35 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
          {showTransferScreen ? (
            <div className="flex-1 flex flex-col p-8 text-center animate-in zoom-in duration-300">
              <div className="mb-8"><div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4"><ArrowRightLeft className="w-8 h-8" /></div><h3 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Transferencia</h3><p className="text-slate-500 text-xs font-medium mt-2">Paga un total de <span className="font-black text-slate-900 italic">${formatPrice(cartTotal)}</span></p></div>
-             <div className="flex-1 flex flex-col items-center justify-center"><div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 shadow-inner w-full">{restaurantSettings.qrUrl ? (<div className="space-y-6"><img src={restaurantSettings.qrUrl} className="w-full max-w-[200px] mx-auto rounded-2xl shadow-xl" /></div>) : (<div className="py-12 opacity-40"><QrCode className="w-12 h-12 mx-auto mb-2" /><p className="text-[10px] font-black uppercase tracking-widest">QR no disponible</p></div>)}</div>{restaurantSettings.transferUrl && (<a href={restaurantSettings.transferUrl} target="_blank" rel="noopener noreferrer" className="mt-8 flex items-center gap-3 text-blue-600 font-black text-[10px] uppercase tracking-widest hover:underline">Abrir App Bancaria <ExternalLink className="w-4 h-4" /></a>)}</div>
-             <div className="mt-8 space-y-4"><button onClick={handlePayment} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl">YA PAGUÉ</button><button onClick={() => setShowTransferScreen(false)} className="w-full text-[9px] font-black text-slate-400 uppercase tracking-widest">ATRÁS</button></div>
+             <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 shadow-inner w-full">
+                    {restaurantSettings.qrUrl ? (
+                        <div className="space-y-4">
+                            <img src={restaurantSettings.qrUrl} className="w-full max-w-[220px] mx-auto rounded-2xl shadow-xl border-4 border-white" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Escanea el código QR para pagar</p>
+                        </div>
+                    ) : (
+                        <div className="py-12 opacity-40">
+                            <QrCode className="w-12 h-12 mx-auto mb-2 text-slate-400" />
+                            <p className="text-[10px] font-black uppercase tracking-widest">QR no disponible</p>
+                        </div>
+                    )}
+                </div>
+                {restaurantSettings.transferUrl && (
+                    <a href={restaurantSettings.transferUrl} target="_blank" rel="noopener noreferrer" className="mt-8 flex items-center gap-3 text-blue-600 font-black text-[10px] uppercase tracking-widest hover:underline hover:scale-105 transition-all">
+                        Abrir Aplicación Bancaria <ExternalLink className="w-4 h-4" />
+                    </a>
+                )}
+             </div>
+             <div className="mt-8 space-y-4"><button onClick={handlePayment} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all">YA REALICÉ EL PAGO</button><button onClick={() => setShowTransferScreen(false)} className="w-full text-[9px] font-black text-slate-400 uppercase tracking-widest">VOLVER ATRÁS</button></div>
            </div>
          ) : (
            <>
              <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 no-scrollbar">
-                <div className="space-y-4">{cart.length === 0 ? (<div className="py-24 text-center opacity-20"><ShoppingBasket className="w-16 h-16 mx-auto mb-6 text-slate-900" /><p className="font-black uppercase text-[10px] tracking-widest">Vacío</p></div>) : cart.map((item: any, idx: number) => (<div key={idx} className="flex flex-col gap-3 bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100 relative"><button onClick={() => removeItem(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button><div className="flex items-center gap-4"><img src={item.image} className="w-14 h-14 rounded-xl object-cover" /><div className="flex-1 min-w-0"><p className="text-[11px] font-black uppercase text-slate-900 truncate mb-1">{item.name}</p><p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Cant: {item.quantity}</p></div></div></div>))}</div>
-                {cart.length > 0 && (<><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Datos</h4><div className="space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner outline-none" /><input type="text" placeholder="Mesa" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner outline-none" /></div></div><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Pago</h4><div className="grid grid-cols-2 gap-4"><button onClick={() => setSelectedPaymentMethod('CASH')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-slate-50 border-transparent text-slate-400'}`}><Banknote className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Efectivo</span></button><button onClick={() => setSelectedPaymentMethod('TRANSFER')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-slate-50 border-transparent text-slate-400'}`}><QrCode className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Transfer</span></button></div></div></>)}
+                <div className="space-y-4">{cart.length === 0 ? (<div className="py-24 text-center opacity-20"><ShoppingBasket className="w-16 h-16 mx-auto mb-6 text-slate-900" /><p className="font-black uppercase text-[10px] tracking-widest">Carrito Vacío</p></div>) : cart.map((item: any, idx: number) => (<div key={idx} className="flex flex-col gap-3 bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100 relative"><button onClick={() => removeItem(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-4 h-4" /></button><div className="flex items-center gap-4"><img src={item.image} className="w-14 h-14 rounded-xl object-cover shadow-sm" /><div className="flex-1 min-w-0"><p className="text-[11px] font-black uppercase text-slate-900 truncate mb-1">{item.name}</p><p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Cantidad: {item.quantity}</p></div></div></div>))}</div>
+                {cart.length > 0 && (<><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Datos de Entrega</h4><div className="space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner outline-none font-black text-[10px] uppercase focus:border-orange-500" /><input type="text" placeholder="Mesa / Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner outline-none font-black text-[10px] uppercase focus:border-orange-500" /></div></div><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Método de Pago</h4><div className="grid grid-cols-2 gap-4"><button onClick={() => setSelectedPaymentMethod('CASH')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-md' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}><Banknote className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Efectivo</span></button><button onClick={() => setSelectedPaymentMethod('TRANSFER')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-md' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}><QrCode className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Transferencia</span></button></div></div></>)}
              </div>
-             <div className="p-6 md:p-10 border-t glass pb-safe"><div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400">Total</span><span className="text-3xl font-black italic tracking-tighter">${formatPrice(cartTotal)}</span></div><button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-5 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl transition-all ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{isPaying ? '...' : paymentSuccess ? 'OK' : 'Confirmar'}</button></div>
+             <div className="p-6 md:p-10 border-t glass pb-safe"><div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400">Total a Pagar</span><span className="text-3xl font-black italic tracking-tighter text-slate-900">${formatPrice(cartTotal)}</span></div><button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-5 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl transition-all btn-press ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white disabled:opacity-30'}`}>{isPaying ? 'Procesando...' : paymentSuccess ? '¡Enviado!' : (selectedPaymentMethod === 'TRANSFER' ? 'Ir a Pagar' : 'Confirmar Pedido')}</button></div>
            </>
          )}
       </div>
@@ -588,17 +639,10 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
 };
 
 const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => void }) => {
-  const steps = [{ status: OrderStatus.PENDING, label: 'Recibido', icon: <Bell className="w-6 h-6" /> }, { status: OrderStatus.PREPARING, label: 'Cocinando', icon: <UtensilsCrossed className="w-6 h-6" /> }, { status: OrderStatus.READY, label: 'Listo', icon: <Sparkles className="w-6 h-6" /> }];
+  const steps = [{ status: OrderStatus.PENDING, label: 'Recibido', icon: <Bell className="w-6 h-6" /> }, { status: OrderStatus.PREPARING, label: 'Cocinando', icon: <UtensilsCrossed className="w-6 h-6" /> }, { status: OrderStatus.READY, label: '¡Listo!', icon: <Sparkles className="w-6 h-6" /> }];
   const currentIdx = steps.findIndex(s => s.status === order.status);
   return (
-    <div className="fixed inset-0 z-[450] bg-slate-950 flex flex-col p-6 animate-in fade-in"><AnimatedFireBackground /><div className="relative z-10 flex-1 flex flex-col max-w-xl mx-auto w-full"><header className="flex justify-between items-center py-8"><button onClick={onClose} className="p-4 bg-white/5 rounded-2xl text-white"><X className="w-6 h-6" /></button><h3 className="text-white font-black text-xl italic uppercase truncate">{order.customerName}</h3></header><main className="flex-1 flex flex-col items-center justify-center text-center space-y-12"><div className={`w-48 h-48 md:w-64 md:h-64 rounded-full border-[6px] border-orange-500/20 flex items-center justify-center relative ${order.status === OrderStatus.READY ? 'shadow-orange-glow animate-pulse' : ''}`}><div className="flex flex-col items-center gap-4"><div className="w-20 h-20 bg-orange-600 rounded-3xl flex items-center justify-center text-white shadow-2xl">{steps[currentIdx]?.icon}</div><h2 className="text-3xl font-black text-white uppercase italic">{steps[currentIdx]?.label}</h2></div></div></main><footer className="py-10"><button onClick={onClose} className="w-full py-5 bg-white text-slate-950 rounded-full font-black uppercase text-[10px] tracking-widest">Cerrar</button></footer></div></div>
-  );
-};
-
-const CategoryForm = ({ category, onSave, onClose }: any) => {
-  const [data, setData] = useState(category || { name: '', icon: '🍴' });
-  return (
-    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[350] flex items-center justify-center p-6"><div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-slate-900"><h2 className="text-xl font-black uppercase italic tracking-tighter mb-6 text-center">Categoría</h2><div className="space-y-4"><input type="text" value={data.icon} onChange={e => setData({...data, icon: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xl text-center outline-none border border-slate-200" maxLength={2} /><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 uppercase" placeholder="Nombre" /><div className="pt-4"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-widest">Guardar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase text-center">Cerrar</button></div></div></div></div>
+    <div className="fixed inset-0 z-[450] bg-slate-950 flex flex-col p-6 animate-in fade-in"><AnimatedFireBackground /><div className="relative z-10 flex-1 flex flex-col max-w-xl mx-auto w-full"><header className="flex justify-between items-center py-8"><button onClick={onClose} className="p-4 bg-white/5 rounded-2xl text-white hover:bg-white/10 transition-all"><X className="w-6 h-6" /></button><div className="text-right"><p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">Orden #{order.id.slice(-4).toUpperCase()}</p><h3 className="text-white font-black text-xl italic uppercase truncate max-w-[150px]">{order.customerName}</h3></div></header><main className="flex-1 flex flex-col items-center justify-center text-center space-y-12"><div className={`w-48 h-48 md:w-64 md:h-64 rounded-full border-[6px] border-orange-500/20 flex items-center justify-center relative ${order.status === OrderStatus.READY ? 'shadow-orange-glow animate-pulse' : ''}`}><div className="flex flex-col items-center gap-4"><div className="w-20 h-20 bg-orange-600 rounded-3xl flex items-center justify-center text-white shadow-2xl animate-bounce">{steps[currentIdx]?.icon}</div><div className="space-y-1"><p className="text-[10px] font-black text-white/40 uppercase tracking-widest">ESTADO</p><h2 className="text-3xl font-black text-white uppercase italic">{steps[currentIdx]?.label}</h2></div></div></div><div className="w-full bg-white/5 p-8 rounded-[2.5rem] border border-white/5"><div className="flex justify-between items-center"><div className="text-left"><p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Tiempo</p><OrderTimer startTime={order.createdAt} light /></div><div className="text-right"><p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Mesa</p><p className="text-xl font-black text-white italic">{order.tableNumber}</p></div></div></div></main><footer className="py-10"><button onClick={onClose} className="w-full py-5 bg-white text-slate-950 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all">Seguir Mirando el Menú</button></footer></div></div>
   );
 };
 
@@ -609,7 +653,7 @@ const AdminForm = ({ item, categories, onSave, onClose }: any) => {
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setData({ ...data, image: reader.result as string }); reader.readAsDataURL(file); } };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar Plato</h2><div className="space-y-4 md:space-y-6"><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><div className="grid grid-cols-2 gap-4"><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200" /><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 uppercase appearance-none cursor-pointer">{categories.map((c: Category) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase">Imagen</label><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase">CARGAR</button></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 resize-none" /><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-widest">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase text-center">Cerrar</button></div></div></div></div>
+    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map((c: Category) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen del Producto</label><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1 hover:text-orange-600 transition-colors"><Upload className="w-3 h-3" /> CARGAR</button></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Descripción Gourmet</label><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none focus:border-orange-500" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl hover:bg-slate-800 transition-all">Confirmar Cambios</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cancelar</button></div></div></div></div>
   );
 };
 
