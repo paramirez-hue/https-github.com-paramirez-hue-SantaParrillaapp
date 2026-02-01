@@ -98,12 +98,13 @@ const App: React.FC = () => {
   });
   const [showTrackingView, setShowTrackingView] = useState(false);
 
+  // CRITICAL: Initialize with defaults, then sync with Supabase
   const [restaurantSettings, setRestaurantSettings] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('santa_parrilla_settings');
       if (saved) return JSON.parse(saved);
     }
-    return { ...DEFAULT_BRANDING, logoUrl: '', name: 'Santa Parrilla', sheetsWebhook: '', qrUrl: '', transferUrl: '' };
+    return { ...DEFAULT_BRANDING, sheetsWebhook: '', qrUrl: '', transferUrl: '' };
   });
 
   const [isSavingBranding, setIsSavingBranding] = useState(false);
@@ -122,98 +123,36 @@ const App: React.FC = () => {
       const { data: ordersData } = await supabase.from('orders').select('*').neq('status', OrderStatus.DELIVERED).order('createdAt', { ascending: false });
       if (ordersData) setOrders(ordersData);
 
-      if (!isSavingBranding) {
-        const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
-        if (settingsData) {
-          setRestaurantSettings(prev => ({ 
-            ...prev,
-            name: settingsData.name || prev.name, 
-            logoUrl: settingsData.logoUrl || prev.logoUrl,
-            sheetsWebhook: settingsData.sheetsWebhook || prev.sheetsWebhook,
-            qrUrl: settingsData.qrUrl || prev.qrUrl,
-            transferUrl: settingsData.transferUrl || prev.transferUrl
-          }));
+      // Persist global settings from Supabase (Cloud Sync)
+      const { data: settingsData, error } = await supabase.from('settings').select('*').eq('id', 'branding').maybeSingle();
+      if (settingsData && !isSavingBranding) {
+        const mergedSettings = { 
+          ...restaurantSettings,
+          name: settingsData.name || restaurantSettings.name, 
+          logoUrl: settingsData.logoUrl || restaurantSettings.logoUrl,
+          sheetsWebhook: settingsData.sheetsWebhook || restaurantSettings.sheetsWebhook,
+          qrUrl: settingsData.qrUrl || restaurantSettings.qrUrl,
+          transferUrl: settingsData.transferUrl || restaurantSettings.transferUrl
+        };
+        setRestaurantSettings(mergedSettings);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('santa_parrilla_settings', JSON.stringify(mergedSettings));
         }
       }
     } catch (err) { console.error("Fetch error:", err); }
-  };
-
-  const fetchHistory = async () => {
-    try {
-      const { data, error } = await supabase.from('orders').select('*');
-      if (error) throw error;
-      setAllOrdersHistory(data || []);
-    } catch (err) { console.error("History error:", err); }
   };
 
   useEffect(() => {
     fetchData();
     const menuSub = supabase.channel('menu-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData).subscribe();
     const ordersSub = supabase.channel('ord-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchData).subscribe();
-    return () => { supabase.removeChannel(menuSub); supabase.removeChannel(ordersSub); };
-  }, [isStaffMode]);
-
-  useEffect(() => { if (activeView === 'stats') fetchHistory(); }, [activeView]);
-
-  const salesReport = useMemo(() => {
-    const report: Record<string, { name: string, quantity: number, total: number }> = {};
-    let grandTotal = 0;
-    allOrdersHistory.forEach(order => {
-      grandTotal += order.total;
-      order.items.forEach(item => {
-        if (!report[item.name]) report[item.name] = { name: item.name, quantity: 0, total: 0 };
-        report[item.name].quantity += item.quantity;
-        const adds = (item.additions || []).reduce((s, a) => s + a.price, 0);
-        report[item.name].total += (item.price + adds) * item.quantity;
-      });
-    });
-    return { items: Object.values(report).sort((a, b) => b.quantity - a.quantity), grandTotal, orderCount: allOrdersHistory.length };
-  }, [allOrdersHistory]);
-
-  const trackedOrder = useMemo(() => {
-    if (!currentOrderTrackingId) return null;
-    return orders.find(o => o.id === currentOrderTrackingId) || null;
-  }, [orders, currentOrderTrackingId]);
-
-  const handleTestWebhook = async () => {
-    if (!restaurantSettings.sheetsWebhook) return alert("Ingresa una URL primero.");
-    setIsTestingWebhook(true);
-    try {
-      await fetch(restaurantSettings.sheetsWebhook, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: true, restaurantName: restaurantSettings.name, message: "Prueba exitosa.", timestamp: new Date().toISOString() })
-      });
-      alert("¡Prueba enviada!");
-    } catch (err: any) { alert("Error: " + err.message); } finally { setIsTestingWebhook(false); }
-  };
-
-  const handleResetHistory = async () => {
-    if (!confirm("⚠️ ¿Reiniciar reportes? Se borrará todo el historial.")) return;
-    try {
-      await supabase.from('orders').delete().neq('id', '0');
-      alert("¡Reporte reiniciado!");
-      fetchHistory(); fetchData();
-    } catch (err: any) { alert("Error: " + err.message); }
-  };
-
-  const handleExportAndCleanup = async () => {
-    if (!restaurantSettings.sheetsWebhook) return alert("Configura el Webhook primero.");
-    if (!confirm("¿Exportar y limpiar historial?")) return;
-    setIsExporting(true);
-    try {
-      await fetch(restaurantSettings.sheetsWebhook, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restaurantName: restaurantSettings.name, date: new Date().toLocaleDateString(), totalSales: salesReport.grandTotal, orderCount: salesReport.orderCount, itemsReport: salesReport.items, rawHistory: allOrdersHistory })
-      });
-      await supabase.from('orders').delete().neq('id', '0');
-      alert("¡Datos exportados!");
-      fetchHistory(); fetchData();
-    } catch (err: any) { alert("Error: " + err.message); } finally { setIsExporting(false); }
-  };
+    const settingsSub = supabase.channel('settings-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, fetchData).subscribe();
+    return () => { 
+      supabase.removeChannel(menuSub); 
+      supabase.removeChannel(ordersSub); 
+      supabase.removeChannel(settingsSub);
+    };
+  }, []);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -236,19 +175,38 @@ const App: React.FC = () => {
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
-      if (typeof window !== 'undefined') localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
-      const payload = { id: 'branding', name: restaurantSettings.name, logoUrl: restaurantSettings.logoUrl, sheetsWebhook: restaurantSettings.sheetsWebhook, qrUrl: restaurantSettings.qrUrl, transferUrl: restaurantSettings.transferUrl };
-      await supabase.from('settings').upsert(payload);
+      const payload = { 
+        id: 'branding', 
+        name: restaurantSettings.name, 
+        logoUrl: restaurantSettings.logoUrl, 
+        sheetsWebhook: restaurantSettings.sheetsWebhook, 
+        qrUrl: restaurantSettings.qrUrl, 
+        transferUrl: restaurantSettings.transferUrl 
+      };
+      
+      const { error } = await supabase.from('settings').upsert(payload);
+      if (error) throw error;
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
+      }
+      
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
-      fetchData();
+      await fetchData();
+    } catch (err) {
+      console.error("Save error:", err);
+      alert("Error al guardar en la nube. Verifica tu conexión.");
     } finally { setIsSavingBranding(false); }
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!confirm("¿Eliminar?")) return;
-    await supabase.from('menu').delete().eq('id', id);
-    fetchData();
+    if (!window.confirm("¿Estás seguro de eliminar este plato?")) return;
+    try {
+      const { error } = await supabase.from('menu').delete().eq('id', id);
+      if (error) throw error;
+      await fetchData();
+    } catch (err) { console.error("Delete error:", err); }
   };
 
   const addToCart = (item: FoodItem, quantity: number = 1, additions: FoodItem[] = []) => {
@@ -294,13 +252,6 @@ const App: React.FC = () => {
     return acc + ((item.price + adds) * item.quantity);
   }, 0);
 
-  const filteredMenu = useMemo(() => {
-    if (activeCategory === 'Todas') return menuItems.filter(i => i.category.toLowerCase().trim() !== 'adiciones');
-    return menuItems.filter(i => i.category === activeCategory);
-  }, [menuItems, activeCategory]);
-
-  const additionItems = useMemo(() => menuItems.filter(i => i.category.toLowerCase().trim() === 'adiciones'), [menuItems]);
-
   const getStatusStyles = (status: OrderStatus) => {
     switch (status) {
       case OrderStatus.PENDING: return { card: 'border-rose-100 bg-rose-50/20', badge: 'bg-rose-500 text-white', label: 'PENDIENTE', btn: 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200', btnLabel: 'Recibir Pedido', icon: <AlertCircle className="w-5 h-5" /> };
@@ -339,7 +290,7 @@ const App: React.FC = () => {
   const NavContent = () => (
     <div className="flex flex-col h-full glass-dark">
       <div className="p-10 text-center">
-        <div className="w-20 h-20 bg-slate-800 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10 shrink-0"><img src={restaurantSettings.logoUrl || DEFAULT_BRANDING.logoUrl} className="w-full h-full object-cover" /></div>
+        <div className="w-20 h-20 bg-slate-800 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10 shrink-0"><img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /></div>
         <h1 className="text-xs font-black uppercase tracking-widest text-white/90 italic truncate">{restaurantSettings.name}</h1>
       </div>
       <nav className="flex-1 px-6 space-y-3 overflow-y-auto no-scrollbar pb-10">
@@ -354,7 +305,7 @@ const App: React.FC = () => {
           <>
             <SidebarItem icon={<LayoutGrid className="w-5 h-5" />} label="Menú" active={activeCategory === 'Todas'} onClick={() => {setActiveCategory('Todas'); setIsMobileMenuOpen(false);}} />
             {categories.map(c => <SidebarItem key={c.id} icon={<span className="text-lg">{c.icon}</span>} label={c.name} active={activeCategory === c.name} onClick={() => {setActiveCategory(c.name); setIsMobileMenuOpen(false);}} />)}
-            {trackedOrder && <SidebarItem icon={<Timer className="w-5 h-5" />} label="Estado" active={showTrackingView} onClick={() => {setShowTrackingView(true); setIsMobileMenuOpen(false);}} />}
+            {currentOrderTrackingId && <SidebarItem icon={<Timer className="w-5 h-5" />} label="Estado" active={showTrackingView} onClick={() => {setShowTrackingView(true); setIsMobileMenuOpen(false);}} />}
             <div className="pt-10 border-t border-white/5 mt-6"><button onClick={() => {setShowLogin(true); setIsMobileMenuOpen(false);}} className="w-full p-5 text-white/40 hover:text-white rounded-3xl flex items-center gap-4 font-black text-[9px] uppercase tracking-widest border border-white/5 transition-all"><Lock className="w-4 h-4" /> Staff</button></div>
           </>
         )}
@@ -384,7 +335,7 @@ const App: React.FC = () => {
         <main className="flex-1 p-4 md:p-12 max-w-7xl mx-auto w-full pb-32">
           {activeView === 'menu' && !isStaffMode && (
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-              {filteredMenu.map(item => (
+              {menuItems.filter(i => activeCategory === 'Todas' ? i.category !== 'Adiciones' : i.category === activeCategory).map(item => (
                 <div key={item.id} onClick={() => setSelectedFoodForDetail(item)} className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-premium flex flex-col group transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 cursor-pointer animate-fade-scale">
                   <div className="h-40 md:h-56 overflow-hidden relative"><img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" /><div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${formatPrice(item.price)}</div></div>
                   <div className="p-4 md:p-6 flex flex-col flex-1"><h3 className="text-xs md:text-lg font-black text-slate-900 uppercase italic mb-1 truncate">{item.name}</h3><p className="text-[9px] md:text-xs text-slate-500 line-clamp-2 mb-4 font-medium">{item.description}</p><button className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-900 hover:text-white transition-all rounded-2xl font-black text-[9px] uppercase border border-slate-100 text-slate-900">Pedir</button></div>
@@ -393,117 +344,35 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {isStaffMode && activeView === 'stats' && (
-            <div className="space-y-12 animate-fade-scale">
-               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6">
-                    <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center shadow-inner"><DollarSign className="w-8 h-8" /></div>
-                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Hoy</p><h4 className="text-3xl font-black text-slate-900 italic">${formatPrice(salesReport.grandTotal)}</h4></div>
-                  </div>
-                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6">
-                    <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-3xl flex items-center justify-center shadow-inner"><PackageCheck className="w-8 h-8" /></div>
-                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pedidos</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.orderCount}</h4></div>
-                  </div>
-                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6">
-                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center shadow-inner"><TrendingUp className="w-8 h-8" /></div>
-                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Ítems</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.items.reduce((acc, curr) => acc + curr.quantity, 0)}</h4></div>
-                  </div>
-               </div>
-               <div className="flex flex-col sm:flex-row gap-4">
-                  <button onClick={handleExportAndCleanup} disabled={isExporting} className="flex-1 bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 hover:bg-slate-800 transition-all">
-                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">{isExporting ? <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-8 h-8" />}</div>
-                    <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Cierre Semanal</p><p className="text-[10px] font-bold opacity-70 uppercase">Exportar a Sheets</p></div>
-                  </button>
-                  <button onClick={handleResetHistory} className="bg-rose-600 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 hover:bg-rose-700 transition-all">
-                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center"><RefreshCcw className="w-8 h-8" /></div>
-                    <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Reiniciar Todo</p><p className="text-[10px] font-bold opacity-70 uppercase">Limpiar historial</p></div>
-                  </button>
-               </div>
-            </div>
-          )}
-
-          {isStaffMode && activeView === 'kitchen' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-              {orders.map(order => {
-                const styles = getStatusStyles(order.status);
-                return (
-                  <div key={order.id} className={`bg-white border-[3px] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
-                    <div className="p-8 pb-6 border-b border-dashed flex justify-between items-start">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span>
-                          <span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA {order.tableNumber}</span>
-                        </div>
-                        <p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p>
-                      </div>
-                      <OrderTimer startTime={order.createdAt} status={order.status} />
-                    </div>
-                    <div className="p-10 flex-1 space-y-6">{order.items.map((item, idx) => (<div key={idx} className="space-y-2"><div className="flex items-center gap-5 text-lg font-black text-slate-800"><span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span><span className="uppercase truncate flex-1 tracking-tight">{item.name}</span></div>{item.additions && item.additions.length > 0 && (<div className="ml-15 flex flex-wrap gap-2">{item.additions.map((add, ai) => (<span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>))}</div>)}</div>))}</div>
-                    <div className="p-10 pt-0"><button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-6 rounded-[2rem] text-sm font-black uppercase tracking-[0.2em] shadow-2xl transition-all flex items-center justify-center gap-4 ${styles.btn}`}>{styles.icon}{styles.btnLabel}</button></div>
-                  </div>
-                );
-              })}
-              {orders.length === 0 && <div className="col-span-full py-40 text-center opacity-20"><ChefHat className="w-32 h-32 mx-auto mb-10 text-slate-900" /><p className="font-black uppercase text-sm tracking-[0.5em]">Sin pedidos pendientes</p></div>}
-            </div>
-          )}
-
           {isStaffMode && activeView === 'admin' && (
             <div className="max-w-4xl mx-auto space-y-12 pb-20">
-                <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-slate-200 shadow-premium">
-                    <div className="flex justify-between items-center mb-10"><div><h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter text-slate-900">Configuración</h4></div><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase shadow-xl transition-all ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{brandingSaved ? '¡Guardado!' : 'Guardar'}</button></div>
-                    <div className="space-y-8">
-                      {/* Logo y Nombre */}
-                      <div className="flex flex-col md:flex-row gap-6 items-center">
-                        <div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0 shadow-lg" onClick={() => fileInputRef.current?.click()}>
-                          {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}
-                        </div>
-                        <div className="flex-1 w-full space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre del Local</label>
-                          <input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Santa Parrilla" />
-                        </div>
-                        <input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
-                      </div>
-
-                      {/* Carga de QR y Webhook */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-slate-100">
-                        {/* QR Section */}
-                        <div className="space-y-4">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Código QR para Transferencias</label>
-                          <div className="w-full aspect-square bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all shadow-inner" onClick={() => qrInputRef.current?.click()}>
-                            {restaurantSettings.qrUrl ? (
-                              <img src={restaurantSettings.qrUrl} className="w-full h-full object-contain p-4" />
-                            ) : (
-                              <div className="text-center">
-                                <QrCode className="w-12 h-12 text-slate-300 group-hover:text-orange-500 mx-auto mb-2" />
-                                <p className="text-[10px] font-black text-slate-400 uppercase">Click para Subir</p>
-                              </div>
-                            )}
-                          </div>
-                          <input type="file" ref={qrInputRef} onChange={handleQrUpload} className="hidden" accept="image/*" />
-                        </div>
-
-                        {/* Config URLs */}
-                        <div className="space-y-6 flex flex-col justify-between">
-                           <div className="space-y-2">
-                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Webhook Google Sheets</label>
-                             <div className="relative">
-                               <input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 pr-14 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://script.google.com/..." />
-                               <button onClick={handleTestWebhook} disabled={isTestingWebhook} className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-600">
-                                 {isTestingWebhook ? <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent animate-spin rounded-full" /> : <Send className="w-5 h-5" />}
-                               </button>
-                             </div>
-                           </div>
-                           <div className="space-y-2">
-                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">URL App del Banco (Opcional)</label>
-                             <input type="text" value={restaurantSettings.transferUrl} onChange={e => setRestaurantSettings({...restaurantSettings, transferUrl: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://app.nequi.com.co" />
-                           </div>
-                        </div>
-                      </div>
+              <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-slate-200 shadow-premium">
+                <div className="flex justify-between items-center mb-10"><h4 className="text-lg font-black uppercase italic text-slate-900">Configuración Local</h4><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase transition-all shadow-xl ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{isSavingBranding ? 'Guardando...' : brandingSaved ? '¡Guardado!' : 'Guardar en Nube'}</button></div>
+                <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row gap-6 items-center">
+                    <div className="w-24 h-24 bg-slate-900 rounded-3xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0 shadow-lg" onClick={() => fileInputRef.current?.click()}>
+                      {restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}
                     </div>
+                    <div className="flex-1 w-full space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nombre del Local</label><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" /></div>
+                    <input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-slate-100">
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Código QR para Pagos</label>
+                      <div className="w-full aspect-square bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all shadow-inner" onClick={() => qrInputRef.current?.click()}>
+                        {restaurantSettings.qrUrl ? <img src={restaurantSettings.qrUrl} className="w-full h-full object-contain p-4" /> : <div className="text-center"><QrCode className="w-12 h-12 text-slate-300 group-hover:text-orange-500 mx-auto mb-2" /><p className="text-[10px] font-black text-slate-400 uppercase">Click para Subir</p></div>}
+                      </div>
+                      <input type="file" ref={qrInputRef} onChange={handleQrUpload} className="hidden" accept="image/*" />
+                    </div>
+                    <div className="space-y-6 flex flex-col justify-end">
+                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Webhook Sheets</label><input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://..." /></div>
+                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">URL App del Banco (Transferencias)</label><input type="text" value={restaurantSettings.transferUrl} onChange={e => setRestaurantSettings({...restaurantSettings, transferUrl: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://app.banco.com" /></div>
+                    </div>
+                  </div>
                 </div>
-
-                <div className="flex justify-between items-center px-6"><h4 className="text-xl font-black italic uppercase text-slate-900">Carta de Productos</h4><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl hover:scale-105 transition-all"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo Plato</button></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6 shadow-sm"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-inner" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase">{item.category}</p></div><div className="flex gap-2"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
+              </div>
+              <div className="flex justify-between items-center px-6"><h4 className="text-xl font-black italic uppercase text-slate-900">Productos</h4><button onClick={() => setIsAdminFormOpen(true)} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl hover:scale-105 transition-all"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo Plato</button></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6 shadow-sm"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase">{item.category}</p></div><div className="flex gap-2"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
             </div>
           )}
         </main>
@@ -513,17 +382,17 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[600] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-12 text-center shadow-2xl animate-in zoom-in duration-300">
              <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Ingresa PIN de Staff</p>
-             <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">PIN Administrador</p>
+             <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('admin'); } }} />
              <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500 transition-colors">Cancelar</button>
           </div>
         </div>
       )}
 
-      {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
+      {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={menuItems.filter(i => i.category.toLowerCase().trim() === 'adiciones')} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
       {isCartOpen && <CartView cart={cart} setCart={setOrderItems} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePaymentConfirm} onClose={() => { setIsCartOpen(false); setShowTransferScreen(false); }} selectedPaymentMethod={selectedPaymentMethod} setSelectedPaymentMethod={setSelectedPaymentMethod} showTransferScreen={showTransferScreen} setShowTransferScreen={setShowTransferScreen} restaurantSettings={restaurantSettings} />}
-      {showTrackingView && trackedOrder && <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />}
-      {isAdminFormOpen && <AdminForm item={editingItem} categories={categories} onSave={async (d: any) => { const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add')); if (d.id && !isInitial) await supabase.from('menu').upsert(d); else { const { id, ...newItem } = d; await supabase.from('menu').insert([newItem]); } setIsAdminFormOpen(false); fetchData(); }} onClose={() => setIsAdminFormOpen(false)} />}
+      {showTrackingView && currentOrderTrackingId && <OrderTrackingView order={orders.find(o => o.id === currentOrderTrackingId)!} onClose={() => setShowTrackingView(false)} />}
+      {isAdminFormOpen && <AdminForm item={editingItem} categories={categories} onSave={async (d: any) => { if (d.id) await supabase.from('menu').upsert(d); else await supabase.from('menu').insert([d]); setIsAdminFormOpen(false); fetchData(); }} onClose={() => setIsAdminFormOpen(false)} />}
     </div>
   );
 };
@@ -536,7 +405,7 @@ const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
   </button>
 );
 
-const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, additions: FoodItem[], onAdd: (item: FoodItem, qty: number, additions: FoodItem[]) => void, onClose: () => void }) => {
+const FoodDetailModal = ({ item, additions, onAdd, onClose }: any) => {
   const [qty, setQty] = useState(1);
   const [selectedAdds, setSelectedAdds] = useState<FoodItem[]>([]);
   const toggleAddition = (add: FoodItem) => setSelectedAdds(prev => prev.find(i => i.id === add.id) ? prev.filter(i => i.id !== add.id) : [...prev, add]);
@@ -556,33 +425,26 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-6 md:space-y-8 no-scrollbar">
           <p className="text-xs md:text-sm text-slate-500 font-medium leading-relaxed">{item.description}</p>
           <div className="space-y-4">
-            <div className="flex justify-between items-center"><label className="text-[10px] md:text-[11px] font-black text-slate-900 uppercase tracking-widest">¿Algo extra?</label></div>
-            <div className="relative">
-              <div className="max-h-56 md:max-h-64 overflow-y-auto pr-2 space-y-2 md:space-y-3 custom-scrollbar relative">
-                {additions.length > 0 ? additions.map(add => { 
-                  const isSelected = selectedAdds.find(i => i.id === add.id); 
-                  return (
-                    <button key={add.id} onClick={() => toggleAddition(add)} className={`w-full p-4 md:p-5 rounded-2xl md:rounded-3xl border transition-all flex items-center justify-between group ${isSelected ? 'bg-orange-600 border-orange-500 text-white shadow-orange-glow' : 'bg-slate-50 border-slate-100 hover:border-slate-200 text-slate-900'}`}>
-                      <div className="flex items-center gap-3 md:gap-4 text-left">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isSelected ? 'bg-white/20' : 'bg-white shadow-sm'}`}><Plus className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-slate-400 group-hover:text-slate-900'}`} /></div>
-                        <div><p className="text-[10px] md:text-[11px] font-black uppercase italic leading-none mb-1">{add.name}</p><p className={`text-[9px] md:text-[10px] font-bold ${isSelected ? 'text-orange-200' : 'text-slate-400'}`}>+${formatPrice(add.price)}</p></div>
-                      </div>
-                      {isSelected && <Check className="w-4 h-4" />}
-                    </button>
-                  ); 
-                }) : <p className="text-center text-[10px] text-slate-400 py-4 uppercase font-black">Sin adiciones</p>}
-              </div>
-              {additions.length > 3 && (
-                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none flex items-end justify-center pb-1">
-                  <ChevronDown className="w-4 h-4 text-slate-300 animate-bounce" />
-                </div>
-              )}
+            <label className="text-[10px] md:text-[11px] font-black text-slate-900 uppercase tracking-widest">¿Algo extra?</label>
+            <div className="grid grid-cols-1 gap-2">
+              {additions.map((add: any) => { 
+                const isSelected = selectedAdds.find(i => i.id === add.id); 
+                return (
+                  <button key={add.id} onClick={() => toggleAddition(add)} className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between ${isSelected ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSelected ? 'bg-white/20' : 'bg-white shadow-sm'}`}><Plus className="w-3.5 h-3.5" /></div>
+                      <div><p className="text-[10px] font-black uppercase italic leading-none">{add.name}</p></div>
+                    </div>
+                    <p className={`text-[10px] font-black ${isSelected ? 'text-white' : 'text-orange-600'}`}>+${formatPrice(add.price)}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
         <div className="p-6 md:p-10 border-t bg-slate-50 flex items-center justify-between gap-4 pb-safe shrink-0">
-          <div className="flex items-center gap-3 bg-white p-1.5 rounded-full border border-slate-200 shrink-0"><button onClick={() => setQty(q => Math.max(1, q - 1))} className="w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center text-slate-400"><Minus className="w-5 h-5" /></button><span className="text-lg md:text-2xl font-black text-slate-900 w-8 md:w-10 text-center italic">{qty}</span><button onClick={() => setQty(q => q + 1)} className="w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center bg-slate-900 text-white shadow-lg"><Plus className="w-5 h-5" /></button></div>
-          <button onClick={() => onAdd(item, qty, selectedAdds)} className="flex-1 py-5 bg-orange-600 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-orange-glow hover:bg-orange-500 transition-all btn-press flex items-center justify-center gap-2">CONFIRMAR <ChevronRight className="w-5 h-5" /></button>
+          <div className="flex items-center gap-3 bg-white p-1.5 rounded-full border border-slate-200 shrink-0"><button onClick={() => setQty(q => Math.max(1, q - 1))} className="w-10 h-10 rounded-full flex items-center justify-center text-slate-400"><Minus className="w-5 h-5" /></button><span className="text-lg font-black text-slate-900 w-8 text-center">{qty}</span><button onClick={() => setQty(q => q + 1)} className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-900 text-white"><Plus className="w-5 h-5" /></button></div>
+          <button onClick={() => onAdd(item, qty, selectedAdds)} className="flex-1 py-5 bg-orange-600 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-lg">AGREGAR AL PEDIDO</button>
         </div>
       </div>
     </div>
@@ -612,25 +474,25 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
                     ) : (
                         <div className="py-12 opacity-40">
                             <QrCode className="w-12 h-12 mx-auto mb-2 text-slate-400" />
-                            <p className="text-[10px] font-black uppercase tracking-widest">QR no disponible</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest">QR no configurado</p>
                         </div>
                     )}
                 </div>
                 {restaurantSettings.transferUrl && (
-                    <a href={restaurantSettings.transferUrl} target="_blank" rel="noopener noreferrer" className="mt-8 flex items-center gap-3 text-blue-600 font-black text-[10px] uppercase tracking-widest hover:underline hover:scale-105 transition-all">
-                        Abrir Aplicación Bancaria <ExternalLink className="w-4 h-4" />
+                    <a href={restaurantSettings.transferUrl} target="_blank" rel="noopener noreferrer" className="mt-8 flex items-center gap-3 text-blue-600 font-black text-[10px] uppercase tracking-widest hover:underline transition-all">
+                        Abrir App del Banco <ExternalLink className="w-4 h-4" />
                     </a>
                 )}
              </div>
-             <div className="mt-8 space-y-4"><button onClick={handlePayment} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all">YA REALICÉ EL PAGO</button><button onClick={() => setShowTransferScreen(false)} className="w-full text-[9px] font-black text-slate-400 uppercase tracking-widest">VOLVER ATRÁS</button></div>
+             <div className="mt-8 space-y-4"><button onClick={handlePayment} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all">CONFIRMAR ENVÍO</button><button onClick={() => setShowTransferScreen(false)} className="w-full text-[9px] font-black text-slate-400 uppercase tracking-widest">VOLVER</button></div>
            </div>
          ) : (
            <>
              <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 no-scrollbar">
                 <div className="space-y-4">{cart.length === 0 ? (<div className="py-24 text-center opacity-20"><ShoppingBasket className="w-16 h-16 mx-auto mb-6 text-slate-900" /><p className="font-black uppercase text-[10px] tracking-widest">Carrito Vacío</p></div>) : cart.map((item: any, idx: number) => (<div key={idx} className="flex flex-col gap-3 bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100 relative"><button onClick={() => removeItem(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 className="w-4 h-4" /></button><div className="flex items-center gap-4"><img src={item.image} className="w-14 h-14 rounded-xl object-cover shadow-sm" /><div className="flex-1 min-w-0"><p className="text-[11px] font-black uppercase text-slate-900 truncate mb-1">{item.name}</p><p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Cantidad: {item.quantity}</p></div></div></div>))}</div>
-                {cart.length > 0 && (<><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Datos de Entrega</h4><div className="space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner outline-none font-black text-[10px] uppercase focus:border-orange-500" /><input type="text" placeholder="Mesa / Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner outline-none font-black text-[10px] uppercase focus:border-orange-500" /></div></div><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Método de Pago</h4><div className="grid grid-cols-2 gap-4"><button onClick={() => setSelectedPaymentMethod('CASH')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-md' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}><Banknote className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Efectivo</span></button><button onClick={() => setSelectedPaymentMethod('TRANSFER')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-md' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}><QrCode className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Transferencia</span></button></div></div></>)}
+                {cart.length > 0 && (<><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Entrega</h4><div className="space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 outline-none font-black text-[10px] uppercase focus:border-orange-500" /><input type="text" placeholder="Mesa / Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 outline-none font-black text-[10px] uppercase focus:border-orange-500" /></div></div><div className="space-y-4"><h4 className="text-[10px] font-black text-slate-400 uppercase ml-4">Método de Pago</h4><div className="grid grid-cols-2 gap-4"><button onClick={() => setSelectedPaymentMethod('CASH')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-md' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}><Banknote className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Efectivo</span></button><button onClick={() => setSelectedPaymentMethod('TRANSFER')} className={`flex flex-col items-center gap-3 p-6 rounded-[2rem] border-2 transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-md' : 'bg-slate-50 border-transparent text-slate-400 opacity-60'}`}><QrCode className="w-8 h-8" /><span className="text-[9px] font-black uppercase">Transferencia</span></button></div></div></>)}
              </div>
-             <div className="p-6 md:p-10 border-t glass pb-safe"><div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400">Total a Pagar</span><span className="text-3xl font-black italic tracking-tighter text-slate-900">${formatPrice(cartTotal)}</span></div><button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-5 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl transition-all btn-press ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white disabled:opacity-30'}`}>{isPaying ? 'Procesando...' : paymentSuccess ? '¡Enviado!' : (selectedPaymentMethod === 'TRANSFER' ? 'Ir a Pagar' : 'Confirmar Pedido')}</button></div>
+             <div className="p-6 md:p-10 border-t glass pb-safe"><div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400">Total</span><span className="text-3xl font-black italic tracking-tighter text-slate-900">${formatPrice(cartTotal)}</span></div><button onClick={handlePayment} disabled={cart.length === 0 || isPaying || !customerName} className={`w-full py-5 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl transition-all ${paymentSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white disabled:opacity-30'}`}>{isPaying ? 'Enviando...' : paymentSuccess ? '¡Listo!' : 'Realizar Pedido'}</button></div>
            </>
          )}
       </div>
@@ -638,7 +500,7 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
   );
 };
 
-const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => void }) => {
+const OrderTrackingView = ({ order, onClose }: any) => {
   const steps = [{ status: OrderStatus.PENDING, label: 'Recibido', icon: <Bell className="w-6 h-6" /> }, { status: OrderStatus.PREPARING, label: 'Cocinando', icon: <UtensilsCrossed className="w-6 h-6" /> }, { status: OrderStatus.READY, label: '¡Listo!', icon: <Sparkles className="w-6 h-6" /> }];
   const currentIdx = steps.findIndex(s => s.status === order.status);
   return (
@@ -648,7 +510,6 @@ const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => vo
 
 const AdminForm = ({ item, categories, onSave, onClose }: any) => {
   const [data, setData] = useState(item || { name: '', price: 0, category: categories[0]?.name || '', image: '', description: '' });
-  const [isGenerating, setIsGenerating] = useState(false);
   const localFileRef = useRef<HTMLInputElement>(null);
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setData({ ...data, image: reader.result as string }); reader.readAsDataURL(file); } };
 
