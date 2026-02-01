@@ -4,7 +4,7 @@ import { FoodItem, Category } from './types';
 export const DEFAULT_BRANDING = {
   name: 'Santa Parrilla',
   // He convertido la imagen proporcionada a un formato accesible para la app
-  logoUrl: 'https://i.ibb.co/v6m4Vv0/santa-parrilla-logo.png'
+  logoUrl: 'https://drive.google.com/file/d/1bX3yYqIvNq6oKIQljAlsUk0Up5IfW8-P/view?usp=drive_link'
 };
 
 export const INITIAL_MENU: FoodItem[] = [
