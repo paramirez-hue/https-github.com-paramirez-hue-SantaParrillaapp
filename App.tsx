@@ -575,12 +575,23 @@ const App: React.FC = () => {
                       </div>
                     </div>
                 </div>
+
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center px-6"><div><h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Categorías</h4></div><button onClick={() => { setEditingCategory(null); setIsCategoryFormOpen(true); }} className="bg-orange-600 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-orange-glow"><PlusCircle className="w-4 h-4 inline mr-2" /> Nueva</button></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{categories.map(cat => (<div key={cat.id} className="bg-white p-5 rounded-[2rem] border border-slate-200 flex items-center gap-5"><div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-xl shadow-inner">{cat.icon}</div><h5 className="flex-1 font-black uppercase text-xs italic text-slate-900">{cat.name}</h5><div className="flex gap-2"><button onClick={() => { setEditingCategory(cat); setIsCategoryFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-3.5 h-3.5" /></button><button onClick={() => handleDeleteCategory(cat.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center px-6"><div><h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Menú</h4></div><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo</button></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-lg" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div><div className="flex items-center gap-3"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-3.5 h-3.5" /></button></div></div>))}</div>
+                </div>
             </div>
           )}
         </main>
       </div>
 
       {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
+      
       {isCartOpen && (
         <CartView 
           cart={cart} 
@@ -601,7 +612,85 @@ const App: React.FC = () => {
           restaurantSettings={restaurantSettings}
         />
       )}
+
       {showTrackingView && trackedOrder && <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />}
+
+      {showLogin && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6">
+          <div className="bg-white w-full max-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
+             <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
+             <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '1234') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
+             <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {isAdminFormOpen && (
+        <AdminForm item={editingItem} categories={categories} onSave={async (d: any) => { 
+          const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add'));
+          if (d.id && !isInitial) await supabase.from('menu').upsert(d);
+          else { const { id, ...newItem } = d; await supabase.from('menu').insert([newItem]); }
+          setIsAdminFormOpen(false); fetchData();
+        }} onClose={() => setIsAdminFormOpen(false)} />
+      )}
+
+      {isCategoryFormOpen && (
+        <CategoryForm category={editingCategory} onSave={async (d: any) => { 
+          const isInitial = d.id && d.id.startsWith('cat');
+          if (d.id && !isInitial) await supabase.from('categories').upsert(d); 
+          else { const { id, ...newCat } = d; await supabase.from('categories').insert([newCat]); }
+          setIsCategoryFormOpen(false); fetchData(); 
+        }} onClose={() => setIsCategoryFormOpen(false)} />
+      )}
+
+      {showWebhookHelp && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[500] flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 overflow-y-auto max-h-[90vh] shadow-2xl relative">
+              <button onClick={() => setShowWebhookHelp(false)} className="absolute top-8 right-8 p-3 bg-slate-100 rounded-2xl text-slate-900"><X className="w-6 h-6" /></button>
+              <div className="space-y-8">
+                 <div className="space-y-2">
+                    <h2 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900">Conectar con <span className="text-orange-600 not-italic">Sheets</span></h2>
+                    <p className="text-slate-500 text-sm font-medium">Sigue estos pasos para recibir tus cierres semanales automáticamente.</p>
+                 </div>
+                 <div className="space-y-6">
+                    <div className="flex gap-6 items-start">
+                       <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black shrink-0 shadow-lg">1</div>
+                       <div className="space-y-2">
+                          <p className="font-black text-xs uppercase tracking-widest">Prepara tu Hoja</p>
+                          <p className="text-xs text-slate-500 leading-relaxed">Crea una nueva Google Sheet y ve a <span className="font-black text-slate-900 italic">Extensiones > Apps Script</span>.</p>
+                       </div>
+                    </div>
+                    <div className="flex gap-6 items-start">
+                       <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black shrink-0 shadow-lg">2</div>
+                       <div className="space-y-2 w-full">
+                          <p className="font-black text-xs uppercase tracking-widest">Pega el Código</p>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">Borra todo y pega el script correspondiente.</p>
+                          <div className="bg-slate-950 p-6 rounded-3xl relative group">
+                             <pre className="text-[10px] font-mono text-orange-300 overflow-x-auto">
+{`function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  sheet.appendRow([new Date(), data.restaurantName, data.date, data.totalSales, data.orderCount, JSON.stringify(data.itemsReport)]);
+  return ContentService.createTextOutput("OK");
+}`}
+                             </pre>
+                             <button onClick={() => navigator.clipboard.writeText(`function doPost(e) {\n  var data = JSON.parse(e.postData.contents);\n  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n  sheet.appendRow([new Date(), data.restaurantName, data.date, data.totalSales, data.orderCount, JSON.stringify(data.itemsReport)]);\n  return ContentService.createTextOutput("OK");\n}`)} className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all">Copiar</button>
+                          </div>
+                       </div>
+                    </div>
+                    <div className="flex gap-6 items-start">
+                       <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black shrink-0 shadow-lg">3</div>
+                       <div className="space-y-2">
+                          <p className="font-black text-xs uppercase tracking-widest">Desplegar</p>
+                          <p className="text-xs text-slate-500 leading-relaxed">Click en <span className="font-black text-slate-900">Implementar > Nueva implementación</span>.</p>
+                       </div>
+                    </div>
+                 </div>
+                 <button onClick={() => setShowWebhookHelp(false)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.2em] shadow-xl">Entendido</button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -650,7 +739,6 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
                   ); 
                 }) : <p className="text-center text-[10px] text-slate-400 py-4 uppercase font-black">No hay adiciones disponibles</p>}
               </div>
-              {/* Fade Indicator and Arrow */}
               {additions.length > 3 && (
                 <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none flex items-end justify-center pb-1">
                   <ChevronDown className="w-4 h-4 text-slate-300 animate-bounce" />
@@ -720,6 +808,24 @@ const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => vo
   const currentIdx = steps.findIndex(s => s.status === order.status);
   return (
     <div className="fixed inset-0 z-[450] bg-slate-950 flex flex-col p-6 animate-in fade-in"><AnimatedFireBackground /><div className="relative z-10 flex-1 flex flex-col max-w-xl mx-auto w-full"><header className="flex justify-between items-center py-8"><button onClick={onClose} className="p-4 bg-white/5 rounded-2xl text-white hover:bg-white/10 transition-all"><X className="w-6 h-6" /></button><div className="text-right"><p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">Orden #{order.id.slice(-4).toUpperCase()}</p><h3 className="text-white font-black text-xl italic uppercase truncate max-w-[150px]">{order.customerName}</h3></div></header><main className="flex-1 flex flex-col items-center justify-center text-center space-y-12"><div className="relative"><div className={`w-48 h-48 md:w-64 md:h-64 rounded-full border-[6px] border-orange-500/20 flex items-center justify-center relative ${order.status === OrderStatus.READY ? 'shadow-[0_0_80px_rgba(249,115,22,0.4)] animate-pulse' : ''}`}><div className="absolute inset-4 rounded-full border-2 border-dashed border-orange-500/30 animate-spin-slow" /><div className="flex flex-col items-center gap-4"><div className="w-20 h-20 md:w-28 md:h-28 bg-orange-600 rounded-3xl md:rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl animate-bounce">{steps[currentIdx]?.icon}</div><div className="space-y-1"><p className="text-[10px] font-black text-white/40 uppercase tracking-[0.4em]">ESTADO</p><h2 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter">{steps[currentIdx]?.label}</h2></div></div></div></div><div className="w-full space-y-8"><div className="flex justify-between relative px-2"><div className="absolute top-1/2 left-0 right-0 h-1 bg-white/5 -translate-y-1/2 rounded-full" /><div className="absolute top-1/2 left-0 h-1 bg-orange-600 -translate-y-1/2 rounded-full transition-all duration-1000" style={{ width: `${(currentIdx / (steps.length - 1)) * 100}%` }} />{steps.map((s, i) => (<div key={i} className="relative z-10 flex flex-col items-center gap-3"><div className={`w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${i <= currentIdx ? 'bg-orange-600 border-orange-400 text-white scale-110' : 'bg-slate-900 border-slate-800 text-white/20'}`}>{i <= currentIdx ? <Check className="w-4 h-4 md:w-6 md:h-6" /> : <span className="text-xs font-black">{i + 1}</span>}</div><span className={`text-[8px] md:text-[10px] font-black uppercase tracking-widest ${i <= currentIdx ? 'text-white' : 'text-white/20'}`}>{s.label}</span></div>))}</div><div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/5"><div className="flex justify-between items-center"><div className="text-left"><p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Tiempo Transcurrido</p><OrderTimer startTime={order.createdAt} light /></div><div className="text-right"><p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Ubicación</p><p className="text-xl font-black text-white italic uppercase tracking-tighter">MESA • {order.tableNumber}</p></div></div></div></div></main><footer className="py-10"><button onClick={onClose} className="w-full py-5 bg-white text-slate-950 rounded-full font-black uppercase text-[10px] tracking-[0.4em] shadow-2xl active:scale-95 transition-all">Regresar al Menú</button></footer></div></div>
+  );
+};
+
+const CategoryForm = ({ category, onSave, onClose }: any) => {
+  const [data, setData] = useState(category || { name: '', icon: '🍴' });
+  return (
+    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[350] flex items-center justify-center p-6"><div className="bg-white w-full max-sm rounded-[2.5rem] p-8 shadow-2xl text-slate-900"><h2 className="text-xl font-black uppercase italic tracking-tighter mb-6 text-center">Gestionar <span className="text-orange-600 not-italic">Categoría</span></h2><div className="space-y-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Icono / Emoji</label><input type="text" value={data.icon} onChange={e => setData({...data, icon: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xl text-center outline-none border border-slate-200 focus:border-orange-500" maxLength={2} /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 focus:border-orange-500 uppercase" placeholder="Ej: Hamburguesas" /></div><div className="pt-4"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-xl">Guardar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
+  );
+};
+
+const AdminForm = ({ item, categories, onSave, onClose }: any) => {
+  const [data, setData] = useState(item || { name: '', price: 0, category: categories[0]?.name || '', image: '', description: '' });
+  const [isGenerating, setIsGenerating] = useState(false);
+  const localFileRef = useRef<HTMLInputElement>(null);
+  const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setData({ ...data, image: reader.result as string }); reader.readAsDataURL(file); } };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
   );
 };
 
