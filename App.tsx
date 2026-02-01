@@ -324,7 +324,7 @@ const App: React.FC = () => {
         <AnimatedFireBackground />
         
         {/* Bienvenido a */}
-        <div className="relative z-10 text-center animate-fade-scale">
+        <div className="relative z-20 text-center animate-fade-scale">
           <span className="font-lettering text-orange-100/90 text-5xl md:text-7xl block tracking-wide drop-shadow-lg">
             Bienvenido a
           </span>
