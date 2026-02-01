@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
@@ -16,6 +16,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const formatPrice = (amount: number) => {
   return amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2);
+};
+
+const formatDate = (dateInput: any) => {
+  const date = new Date(dateInput);
+  return new Intl.DateTimeFormat('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(date);
 };
 
 const AnimatedFireBackground = () => {
@@ -153,7 +164,10 @@ const App: React.FC = () => {
 
   const fetchHistory = async () => {
     try {
-      const { data, error } = await supabase.from('orders').select('*');
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('createdAt', { ascending: false });
       if (error) throw error;
       setAllOrdersHistory(data || []);
     } catch (err) {
@@ -188,7 +202,8 @@ const App: React.FC = () => {
     return {
       items: Object.values(report).sort((a, b) => b.quantity - a.quantity),
       grandTotal,
-      orderCount: allOrdersHistory.length
+      orderCount: allOrdersHistory.length,
+      history: allOrdersHistory
     };
   }, [allOrdersHistory]);
 
@@ -323,14 +338,12 @@ const App: React.FC = () => {
       <div className="fixed inset-0 z-[500] flex flex-col items-center justify-between py-20 px-8 bg-[#020617] overflow-hidden">
         <AnimatedFireBackground />
         
-        {/* Bienvenido a */}
         <div className="relative z-10 text-center animate-fade-scale">
           <span className="font-lettering text-orange-100/90 text-5xl md:text-7xl block tracking-wide drop-shadow-lg">
             Bienvenido a
           </span>
         </div>
 
-        {/* Logo Circular */}
         <div className="relative z-10 animate-fade-scale delay-100 flex items-center justify-center">
            <div className="absolute inset-0 bg-orange-600/10 blur-[100px] rounded-full scale-125"></div>
            <div className="w-64 h-64 md:w-80 md:h-80 rounded-full border-[10px] border-slate-900 shadow-[0_0_50px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden bg-slate-950 p-2">
@@ -350,7 +363,6 @@ const App: React.FC = () => {
            </div>
         </div>
 
-        {/* Botón Ingresar */}
         <div className="relative z-10 w-full max-w-xs flex flex-col items-center gap-12">
           <button 
             onClick={() => setHasEntered(true)} 
@@ -447,10 +459,78 @@ const App: React.FC = () => {
                     <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items Vendidos</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.items.reduce((acc, curr) => acc + curr.quantity, 0)}</h4></div>
                   </div>
                </div>
-               <button onClick={handleExportAndCleanup} disabled={isExporting} className="w-full bg-orange-600 text-white p-8 rounded-[2.5rem] shadow-orange-glow flex items-center justify-center gap-6 group">
-                  <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">{isExporting ? <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-8 h-8" />}</div>
-                  <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Cerrar Semana</p><p className="text-[10px] font-bold opacity-70 uppercase">Backup en Sheets y Limpiar Datos</p></div>
-               </button>
+
+               <div className="bg-white rounded-[3rem] border border-slate-200 overflow-hidden shadow-2xl">
+                 <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                   <div>
+                     <h3 className="text-xl font-black uppercase italic tracking-tighter text-slate-900 flex items-center gap-3">
+                       <History className="w-6 h-6 text-orange-600" /> Historial de Ventas
+                     </h3>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Últimos pedidos registrados</p>
+                   </div>
+                   <button onClick={handleExportAndCleanup} disabled={isExporting} className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-2xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50">
+                     {isExporting ? <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-5 h-5" />}
+                     <span className="text-[10px] font-black uppercase tracking-widest">Cerrar Semana</span>
+                   </button>
+                 </div>
+                 
+                 <div className="overflow-x-auto no-scrollbar">
+                   {salesReport.history.length === 0 ? (
+                     <div className="py-20 text-center opacity-30">
+                       <DatabaseZap className="w-16 h-16 mx-auto mb-4 text-slate-400" />
+                       <p className="font-black uppercase text-xs tracking-widest">No hay ventas registradas</p>
+                     </div>
+                   ) : (
+                     <table className="w-full text-left border-collapse">
+                       <thead>
+                         <tr className="bg-slate-50/80 border-b border-slate-100">
+                           <th className="p-6 text-[10px] font-black uppercase tracking-widest text-slate-400">Cliente</th>
+                           <th className="p-6 text-[10px] font-black uppercase tracking-widest text-slate-400">Fecha</th>
+                           <th className="p-6 text-[10px] font-black uppercase tracking-widest text-slate-400">Items</th>
+                           <th className="p-6 text-[10px] font-black uppercase tracking-widest text-slate-400">Total</th>
+                           <th className="p-6 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Estado</th>
+                         </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-50">
+                         {salesReport.history.map((order) => (
+                           <tr key={order.id} className="hover:bg-slate-50/30 transition-colors">
+                             <td className="p-6">
+                               <div className="flex flex-col">
+                                 <span className="font-black text-slate-900 uppercase italic text-sm">{order.customerName}</span>
+                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#{order.id.slice(-4)} • Mesa {order.tableNumber}</span>
+                               </div>
+                             </td>
+                             <td className="p-6">
+                               <div className="flex items-center gap-2 text-slate-500 font-bold text-xs">
+                                 <Calendar className="w-3.5 h-3.5" /> {formatDate(order.createdAt)}
+                               </div>
+                             </td>
+                             <td className="p-6">
+                               <div className="flex flex-wrap gap-1.5 max-w-xs">
+                                 {order.items.map((it, idx) => (
+                                   <span key={idx} className="bg-slate-100 text-slate-600 text-[9px] font-black px-2 py-0.5 rounded-md uppercase">
+                                     {it.quantity}x {it.name}
+                                   </span>
+                                 ))}
+                               </div>
+                             </td>
+                             <td className="p-6">
+                               <span className="font-black text-slate-900 text-lg italic tracking-tight">${formatPrice(order.total)}</span>
+                             </td>
+                             <td className="p-6">
+                               <div className="flex justify-center">
+                                 <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${order.status === OrderStatus.DELIVERED ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                   {order.status === OrderStatus.DELIVERED ? 'Entregado' : order.status}
+                                 </span>
+                               </div>
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   )}
+                 </div>
+               </div>
             </div>
           )}
 
