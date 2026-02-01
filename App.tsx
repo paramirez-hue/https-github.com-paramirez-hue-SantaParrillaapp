@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X, Info,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Send, ExternalLink, QrCode, Banknote, CreditCard, ArrowRightLeft
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Send, ExternalLink, QrCode, Banknote, CreditCard, ArrowRightLeft, RefreshCcw
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category, PaymentMethod } from './types';
@@ -146,16 +146,19 @@ const App: React.FC = () => {
         .order('createdAt', { ascending: false });
       if (ordersData) setOrders(ordersData);
 
-      const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
-      if (settingsData) {
-        setRestaurantSettings(prev => ({ 
-          ...prev,
-          name: settingsData.name || prev.name, 
-          logoUrl: settingsData.logoUrl || prev.logoUrl,
-          sheetsWebhook: settingsData.sheetsWebhook || prev.sheetsWebhook,
-          qrUrl: settingsData.qrUrl || prev.qrUrl,
-          transferUrl: settingsData.transferUrl || prev.transferUrl
-        }));
+      // Solo actualizamos settings si NO estamos guardando actualmente para evitar el borrado visual
+      if (!isSavingBranding) {
+        const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
+        if (settingsData) {
+          setRestaurantSettings(prev => ({ 
+            ...prev,
+            name: settingsData.name ?? prev.name, 
+            logoUrl: settingsData.logoUrl ?? prev.logoUrl,
+            sheetsWebhook: settingsData.sheetsWebhook ?? prev.sheetsWebhook,
+            qrUrl: settingsData.qrUrl ?? prev.qrUrl,
+            transferUrl: settingsData.transferUrl ?? prev.transferUrl
+          }));
+        }
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -223,11 +226,23 @@ const App: React.FC = () => {
           timestamp: new Date().toISOString()
         })
       });
-      alert("¡Prueba enviada! Si el script está bien configurado, verás una nueva fila en tu Sheet.");
+      alert("¡Prueba enviada! Revisa tu Google Sheet.");
     } catch (err: any) {
       alert("Error al conectar: " + err.message);
     } finally {
       setIsTestingWebhook(false);
+    }
+  };
+
+  const handleResetHistory = async () => {
+    if (!confirm("¿ESTÁS SEGURO? Esto borrará permanentemente todos los registros de ventas actuales y el reporte volverá a cero.")) return;
+    try {
+      await supabase.from('orders').delete().neq('id', '0');
+      alert("¡Reporte reiniciado!");
+      fetchHistory();
+      fetchData();
+    } catch (err: any) {
+      alert("Error: " + err.message);
     }
   };
 
@@ -281,6 +296,9 @@ const App: React.FC = () => {
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
+      // Guardamos localmente primero para asegurar que no se pierda la URL
+      localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
+
       const payload = { 
         id: 'branding', 
         name: restaurantSettings.name, 
@@ -289,14 +307,18 @@ const App: React.FC = () => {
         qrUrl: restaurantSettings.qrUrl,
         transferUrl: restaurantSettings.transferUrl
       };
-      await supabase.from('settings').upsert(payload);
       
-      localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
-      
+      const { error } = await supabase.from('settings').upsert(payload);
+      if (error) throw error;
+
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
-      fetchData();
-    } finally { setIsSavingBranding(false); }
+      await fetchData();
+    } catch (err: any) {
+      alert("Error al guardar: " + err.message);
+    } finally { 
+      setIsSavingBranding(false); 
+    }
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -487,10 +509,18 @@ const App: React.FC = () => {
                     <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items Vendidos</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.items.reduce((acc, curr) => acc + curr.quantity, 0)}</h4></div>
                   </div>
                </div>
-               <button onClick={handleExportAndCleanup} disabled={isExporting} className="w-full bg-orange-600 text-white p-8 rounded-[2.5rem] shadow-orange-glow flex items-center justify-center gap-6 group">
-                  <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">{isExporting ? <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-8 h-8" />}</div>
-                  <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Cerrar Semana</p><p className="text-[10px] font-bold opacity-70 uppercase">Backup en Sheets y Limpiar Datos</p></div>
-               </button>
+               
+               <div className="flex flex-col sm:flex-row gap-4">
+                  <button onClick={handleExportAndCleanup} disabled={isExporting} className="flex-1 bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 group">
+                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">{isExporting ? <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-8 h-8" />}</div>
+                    <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Cerrar Semana</p><p className="text-[10px] font-bold opacity-70 uppercase">Enviar Backup a Sheets</p></div>
+                  </button>
+                  <button onClick={handleResetHistory} className="bg-rose-600 text-white p-8 rounded-[2.5rem] shadow-xl flex items-center justify-center gap-6 group">
+                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center"><RefreshCcw className="w-8 h-8" /></div>
+                    <div className="text-left"><p className="text-xs font-black uppercase tracking-[0.2em]">Reiniciar</p><p className="text-[10px] font-bold opacity-70 uppercase">Limpiar Todo</p></div>
+                  </button>
+               </div>
+
                <div className="bg-white rounded-[3rem] border border-slate-100 shadow-premium overflow-hidden">
                   <div className="p-10 border-b border-slate-50 flex justify-between items-center"><h4 className="text-xl font-black italic uppercase tracking-tighter text-slate-900">Ranking</h4></div>
                   <table className="w-full">
