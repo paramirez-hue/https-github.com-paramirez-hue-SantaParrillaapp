@@ -5,18 +5,17 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Inyecta la API KEY para que esté disponible en el cliente
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
+    // Definimos específicamente la API_KEY para evitar serializar todo el objeto process.env
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    'global': 'window'
   },
   build: {
     outDir: 'dist',
-    chunkSizeWarningLimit: 1000,
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor': ['react', 'react-dom', 'lucide-react'],
-          'genai': ['@google/genai'],
-          'supabase': ['@supabase/supabase-js']
+          vendor: ['react', 'react-dom', 'lucide-react', '@supabase/supabase-js']
         }
       }
     }
