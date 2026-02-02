@@ -19,14 +19,18 @@ const formatPrice = (amount: number) => {
 };
 
 const formatDate = (dateInput: any) => {
-  const date = new Date(dateInput);
-  return new Intl.DateTimeFormat('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }).format(date);
+  try {
+    const date = new Date(dateInput);
+    return new Intl.DateTimeFormat('es-CO', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(date);
+  } catch (e) {
+    return 'Fecha no disponible';
+  }
 };
 
 const AnimatedFireBackground = () => {
@@ -125,8 +129,10 @@ const App: React.FC = () => {
   const [showTrackingView, setShowTrackingView] = useState(false);
 
   const [restaurantSettings, setRestaurantSettings] = useState(() => {
-    const saved = localStorage.getItem('santa_parrilla_settings');
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('santa_parrilla_settings');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
     return { ...DEFAULT_BRANDING, logoUrl: DEFAULT_BRANDING.logoUrl, name: 'Santa Parrilla', sheetsWebhook: '' };
   });
 
@@ -139,7 +145,7 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
       const { data: menuData } = await supabase.from('menu').select('*');
-      setMenuItems(menuData || []);
+      if (menuData) setMenuItems(menuData);
 
       const { data: catData } = await supabase.from('categories').select('*').order('name');
       setCategories(catData && catData.length > 0 ? catData : INITIAL_CATEGORIES);
@@ -189,7 +195,7 @@ const App: React.FC = () => {
       supabase.removeChannel(catSub); 
       supabase.removeChannel(ordersSub); 
     };
-  }, [isStaffMode]);
+  }, []);
 
   useEffect(() => {
     if (activeView === 'stats') fetchHistory();
@@ -200,12 +206,14 @@ const App: React.FC = () => {
     let grandTotal = 0;
     allOrdersHistory.forEach(order => {
       grandTotal += order.total;
-      order.items.forEach(item => {
-        if (!report[item.name]) report[item.name] = { name: item.name, quantity: 0, total: 0 };
-        report[item.name].quantity += item.quantity;
-        const adds = (item.additions || []).reduce((s, a) => s + a.price, 0);
-        report[item.name].total += (item.price + adds) * item.quantity;
-      });
+      if (order.items && Array.isArray(order.items)) {
+        order.items.forEach((item: any) => {
+          if (!report[item.name]) report[item.name] = { name: item.name, quantity: 0, total: 0 };
+          report[item.name].quantity += item.quantity || 1;
+          const adds = (item.additions || []).reduce((s: number, a: any) => s + (a.price || 0), 0);
+          report[item.name].total += ((item.price || 0) + adds) * (item.quantity || 1);
+        });
+      }
     });
     return {
       items: Object.values(report).sort((a, b) => b.quantity - a.quantity),
@@ -227,7 +235,7 @@ const App: React.FC = () => {
       o.customerName,
       o.tableNumber,
       formatDate(o.createdAt),
-      o.items.map(it => `${it.quantity}x ${it.name}`).join(' | '),
+      (o.items || []).map((it: any) => `${it.quantity}x ${it.name}`).join(' | '),
       o.total,
       o.status
     ]);
@@ -251,17 +259,20 @@ const App: React.FC = () => {
     }
     setIsTestingWebhook(true);
     try {
-      // Envío de prueba
+      const testData = {
+        test: true,
+        restaurantName: restaurantSettings.name,
+        message: "Prueba de conexión",
+        timestamp: new Date().toISOString()
+      };
+
       await fetch(restaurantSettings.sheetsWebhook, {
         method: 'POST',
         mode: 'no-cors',
-        body: JSON.stringify({
-          test: true,
-          message: "Prueba de conexión desde Santa Parrilla",
-          timestamp: new Date().toISOString()
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testData)
       });
-      alert("Se envió la señal de prueba. Verifica tu Google Sheet (debe aparecer una fila nueva con la fecha actual). Si no aparece, verifica que implementaste el script como 'Cualquier persona' (Anyone).");
+      alert("Se envió la señal. Si configuraste bien el script de Google, verás una fila de 'PRUEBA' en tu hoja.");
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -287,18 +298,17 @@ const App: React.FC = () => {
         timestamp: new Date().toISOString()
       };
 
-      // El modo no-cors es necesario para Apps Script
       await fetch(restaurantSettings.sheetsWebhook, {
         method: 'POST',
         mode: 'no-cors',
-        cache: 'no-cache',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       
       const { error } = await supabase.from('orders').delete().neq('id', '0');
       if (error) throw error;
 
-      alert("¡Exportación exitosa! Se han borrado los registros locales y enviado la información a la nube.");
+      alert("¡Exportación finalizada! Los registros locales han sido reiniciados.");
       fetchHistory();
       fetchData();
     } catch (err: any) {
@@ -371,8 +381,9 @@ const App: React.FC = () => {
       };
       const { data, error } = await supabase.from('orders').insert([newOrder]).select();
       if (data && data[0]) {
-        localStorage.setItem('active_order_id', data[0].id);
-        setCurrentOrderTrackingId(data[0].id);
+        const orderId = data[0].id;
+        localStorage.setItem('active_order_id', orderId);
+        setCurrentOrderTrackingId(orderId);
       }
       setOrderItems([]);
       setPaymentSuccess(true);
@@ -389,8 +400,8 @@ const App: React.FC = () => {
   };
 
   const cartTotal = cart.reduce((acc, item) => {
-    const adds = (item.additions || []).reduce((sum, add) => sum + add.price, 0);
-    return acc + ((item.price + adds) * item.quantity);
+    const adds = (item.additions || []).reduce((sum, add) => sum + (add.price || 0), 0);
+    return acc + (((item.price || 0) + adds) * (item.quantity || 1));
   }, 0);
 
   const filteredMenu = useMemo(() => {
@@ -427,6 +438,7 @@ const App: React.FC = () => {
                 {restaurantSettings.logoUrl ? (
                   <img 
                     src={restaurantSettings.logoUrl} 
+                    alt="Logo"
                     className={`w-full h-full object-contain transition-opacity duration-1000 ${logoLoaded ? 'opacity-100' : 'opacity-0'}`} 
                     onLoad={() => setLogoLoaded(true)} 
                   />
@@ -448,7 +460,7 @@ const App: React.FC = () => {
           </button>
           
           <p className="text-[10px] text-white/20 font-bold tracking-widest text-center uppercase">
-            CREADO POR: PABLO RAMIREZ - PABLORAMIREZ9639@GMAIL.COM
+            CREADO POR: PABLO RAMIREZ
           </p>
         </div>
       </div>
@@ -458,7 +470,9 @@ const App: React.FC = () => {
   const NavContent = () => (
     <div className="flex flex-col h-full glass-dark">
       <div className="p-10 text-center">
-        <div className="w-20 h-20 bg-slate-800 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10"><img src={restaurantSettings.logoUrl || DEFAULT_BRANDING.logoUrl} className="w-full h-full object-cover" /></div>
+        <div className="w-20 h-20 bg-slate-800 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10">
+          <img src={restaurantSettings.logoUrl || DEFAULT_BRANDING.logoUrl} alt="Logo Sidebar" className="w-full h-full object-cover" />
+        </div>
         <h1 className="text-xs font-black uppercase tracking-widest text-white/90 italic">{restaurantSettings.name}</h1>
       </div>
       <nav className="flex-1 px-6 space-y-3 overflow-y-auto no-scrollbar pb-10">
@@ -486,7 +500,14 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans bg-[#F8F9FA] text-slate-900">
       <aside className="hidden md:flex flex-col text-white w-72 h-screen sticky top-0 shrink-0"><NavContent /></aside>
-      {isMobileMenuOpen && <div className="fixed inset-0 z-[100] md:hidden"><div className="absolute inset-0 bg-[#020617]/60 backdrop-blur-md" onClick={() => setIsMobileMenuOpen(false)} /><div className="relative w-72 h-full bg-[#020617] text-white animate-in slide-in-from-left duration-300"><NavContent /></div></div>}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-[100] md:hidden">
+          <div className="absolute inset-0 bg-[#020617]/60 backdrop-blur-md" onClick={() => setIsMobileMenuOpen(false)} />
+          <div className="relative w-72 h-full bg-[#020617] text-white animate-in slide-in-from-left duration-300">
+            <NavContent />
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 glass border-b border-slate-200/50 z-40 px-6 py-4 flex justify-between items-center pt-safe">
@@ -512,7 +533,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
               {filteredMenu.map(item => (
                 <div key={item.id} onClick={() => setSelectedFoodForDetail(item)} className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-premium flex flex-col group transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 cursor-pointer animate-fade-scale">
-                  <div className="h-40 md:h-56 overflow-hidden relative"><img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" /><div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${formatPrice(item.price)}</div></div>
+                  <div className="h-40 md:h-56 overflow-hidden relative"><img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" /><div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${formatPrice(item.price)}</div></div>
                   <div className="p-4 md:p-6 flex flex-col flex-1"><h3 className="text-xs md:text-lg font-black text-slate-900 uppercase italic mb-1 truncate">{item.name}</h3><p className="text-[9px] md:text-xs text-slate-500 line-clamp-2 mb-4 font-medium">{item.description}</p><button className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-900 hover:text-white transition-all rounded-2xl font-black text-[9px] uppercase border border-slate-100 text-slate-900">Personalizar</button></div>
                 </div>
               ))}
@@ -591,7 +612,7 @@ const App: React.FC = () => {
                              </td>
                              <td className="p-6">
                                <div className="flex flex-wrap gap-1.5 max-w-xs">
-                                 {order.items.map((it, idx) => (
+                                 {Array.isArray(order.items) && order.items.map((it: any, idx: number) => (
                                    <span key={idx} className="bg-slate-100 text-slate-600 text-[9px] font-black px-2 py-0.5 rounded-md uppercase">
                                      {it.quantity}x {it.name}
                                    </span>
@@ -628,7 +649,7 @@ const App: React.FC = () => {
                       <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span><span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA • {order.tableNumber}</span></div><p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p></div>
                       <OrderTimer startTime={order.createdAt} status={order.status} />
                     </div>
-                    <div className="p-10 flex-1 space-y-6">{order.items.map((item, idx) => (<div key={idx} className="space-y-2"><div className="flex items-center gap-5 text-lg font-black text-slate-800"><span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span><span className="uppercase truncate flex-1 tracking-tight">{item.name}</span></div>{item.additions && item.additions.length > 0 && (<div className="ml-15 flex flex-wrap gap-2">{item.additions.map((add, ai) => (<span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>))}</div>)}</div>))}</div>
+                    <div className="p-10 flex-1 space-y-6">{order.items.map((item: any, idx: number) => (<div key={idx} className="space-y-2"><div className="flex items-center gap-5 text-lg font-black text-slate-800"><span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span><span className="uppercase truncate flex-1 tracking-tight">{item.name}</span></div>{item.additions && item.additions.length > 0 && (<div className="ml-15 flex flex-wrap gap-2">{item.additions.map((add: any, ai: number) => (<span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>))}</div>)}</div>))}</div>
                     <div className="p-10 pt-0"><button onClick={() => updateStatus(order.id, order.status)} className={`w-full py-6 rounded-[2rem] text-sm font-black uppercase tracking-[0.2em] shadow-2xl transition-all btn-press flex items-center justify-center gap-4 ${styles.btn}`}>{styles.icon}{styles.btnLabel}</button></div>
                   </div>
                 );
@@ -641,7 +662,7 @@ const App: React.FC = () => {
                 <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-slate-200 shadow-premium">
                     <div className="flex justify-between items-center mb-10"><div><h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter text-slate-900">Marca</h4><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuraciones</p></div><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase shadow-xl ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{brandingSaved ? 'Guardado' : 'Guardar'}</button></div>
                     <div className="space-y-6">
-                      <div className="flex flex-col md:flex-row gap-6 items-center"><div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0" onClick={() => fileInputRef.current?.click()}>{restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}</div><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
+                      <div className="flex flex-col md:flex-row gap-6 items-center"><div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0" onClick={() => fileInputRef.current?.click()}>{restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} alt="Logo Brand" className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}</div><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
                       
                       <div className="space-y-4">
                         <div className="flex justify-between items-center px-4">
@@ -667,7 +688,7 @@ const App: React.FC = () => {
 
                 <div className="space-y-6">
                   <div className="flex justify-between items-center px-6"><div><h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Menú</h4></div><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo</button></div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-lg" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div><div className="flex items-center gap-3"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-4 h-4" /></button></div></div>))}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} alt={item.name} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-lg" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div><div className="flex items-center gap-3"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-4 h-4" /></button></div></div>))}</div>
                 </div>
             </div>
           )}
@@ -710,7 +731,6 @@ const App: React.FC = () => {
     var data = JSON.parse(contents);
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     
-    // Si es una prueba
     if (data.test) {
       sheet.appendRow([new Date(), "PRUEBA DE CONEXIÓN", "", "", "", ""]);
       return ContentService.createTextOutput("OK");
@@ -745,8 +765,7 @@ const App: React.FC = () => {
                  <ul className="text-sm text-slate-600 list-disc ml-6 space-y-3">
                    <li>Tipo: <b>Aplicación Web</b>.</li>
                    <li>Ejecutar como: <b>Yo</b>.</li>
-                   <li>Quién puede acceder: <b>Cualquier persona (Anyone)</b>. <span className="text-rose-600 font-bold">¡No olvides este paso!</span></li>
-                   <li>Copia la URL generada y pégala en el Panel Admin de esta App.</li>
+                   <li>Quién puede acceder: <b>Cualquier persona (Anyone)</b>. <span className="text-rose-600 font-bold">¡Obligatorio!</span></li>
                  </ul>
                </div>
              </div>
@@ -879,14 +898,14 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
   const [qty, setQty] = useState(1);
   const [selectedAdds, setSelectedAdds] = useState<FoodItem[]>([]);
   const toggleAddition = (add: FoodItem) => setSelectedAdds((prev: any[]) => prev.find(i => i.id === add.id) ? prev.filter(i => i.id !== add.id) : [...prev, add]);
-  const totalPrice = (item.price + selectedAdds.reduce((sum, a) => sum + a.price, 0)) * qty;
+  const totalPrice = ((item.price || 0) + selectedAdds.reduce((sum, a) => sum + (a.price || 0), 0)) * qty;
 
   return (
     <div className="fixed inset-0 z-[400] flex items-end md:items-center justify-center p-0 md:p-4 backdrop-blur-xl">
       <div className="absolute inset-0 bg-slate-900/60" onClick={onClose} />
       <div className="relative w-full max-w-xl bg-white rounded-t-[2.5rem] md:rounded-[3.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
         <div className="relative h-56 md:h-80 shrink-0">
-          <img src={item.image} className="w-full h-full object-cover" />
+          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
           <button onClick={onClose} className="absolute top-6 right-6 p-3 bg-black/20 backdrop-blur-md rounded-2xl text-white"><X className="w-6 h-6" /></button>
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/80 to-transparent p-6 md:p-10 pt-16">
              <div className="flex justify-between items-end gap-4"><div className="min-w-0"><h2 className="text-2xl md:text-5xl font-black uppercase italic tracking-tighter text-slate-900 leading-tight mb-1 truncate">{item.name}</h2><p className="text-[9px] md:text-xs font-black text-orange-600 uppercase tracking-widest">{item.category}</p></div><div className="text-right shrink-0"><span className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Subtotal</span><span className="text-2xl md:text-4xl font-black text-slate-900 italic tracking-tighter leading-none">${formatPrice(totalPrice)}</span></div></div>
@@ -896,7 +915,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
           <p className="text-xs md:text-sm text-slate-500 font-medium leading-relaxed">{item.description}</p>
           <div className="space-y-4 md:space-y-6">
             <div className="flex justify-between items-center"><label className="text-[10px] md:text-[11px] font-black text-slate-900 uppercase tracking-widest">¿Algo extra?</label></div>
-            <div className="grid grid-cols-1 gap-2 md:gap-3">{additions.map(add => { const isSelected = selectedAdds.find(i => i.id === add.id); return (<button key={add.id} onClick={() => toggleAddition(add)} className={`p-4 md:p-5 rounded-2xl md:rounded-3xl border transition-all flex items-center justify-between group ${isSelected ? 'bg-orange-600 border-orange-500 text-white shadow-orange-glow' : 'bg-slate-50 border-slate-100 hover:border-slate-200 text-slate-900'}`}><div className="flex items-center gap-3 md:gap-4 text-left"><div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isSelected ? 'bg-white/20' : 'bg-white shadow-sm'}`}><Plus className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-slate-400 group-hover:text-slate-900'}`} /></div><div><p className="text-[10px] md:text-[11px] font-black uppercase italic leading-none mb-1">{add.name}</p><p className={`text-[9px] md:text-[10px] font-bold ${isSelected ? 'text-orange-200' : 'text-slate-400'}`}>+${formatPrice(add.price)}</p></div></div>{isSelected && <Check className="w-4 h-4" />}</button>); })}</div>
+            <div className="grid grid-cols-1 gap-2 md:gap-3">{additions.map(add => { const isSelected = selectedAdds.find(i => i.id === add.id); return (<button key={add.id} onClick={() => toggleAddition(add)} className={`p-4 md:p-5 rounded-2xl md:rounded-3xl border transition-all flex items-center justify-between group ${isSelected ? 'bg-orange-600 border-orange-500 text-white shadow-orange-glow' : 'bg-slate-50 border-slate-100 hover:border-slate-200 text-slate-900'}`}><div className="flex items-center gap-3 md:gap-4 text-left"><div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isSelected ? 'bg-white/20' : 'bg-white shadow-sm'}`}><Plus className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-slate-400 group-hover:text-slate-900'}`} /></div><div><p className="text-[10px] md:text-[11px] font-black uppercase italic leading-none mb-1">{add.name}</p><p className={`text-[9px] md:text-[10px] font-bold ${isSelected ? 'text-orange-200' : 'text-slate-400'}`}>+${formatPrice(add.price || 0)}</p></div></div>{isSelected && <Check className="w-4 h-4" />}</button>); })}</div>
           </div>
         </div>
         <div className="p-6 md:p-10 border-t bg-slate-50 flex items-center justify-between gap-4 pb-safe">
@@ -917,11 +936,11 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
          <div className="p-6 md:p-8 border-b flex justify-between items-center pt-safe"><h2 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Tu <span className="text-orange-600 not-italic">Orden</span></h2><button onClick={onClose} className="p-2 bg-slate-100 rounded-xl text-slate-900"><X className="w-5 h-5" /></button></div>
          <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 no-scrollbar">
             {cart.length === 0 ? <div className="py-24 text-center opacity-20"><ShoppingBasket className="w-16 h-16 mx-auto mb-6 text-slate-900" /><p className="font-black uppercase text-[10px] tracking-[0.3em]">Carrito Vacío</p></div> : cart.map((item: any, idx: number) => {
-              const addsPrice = (item.additions || []).reduce((sum: number, add: any) => sum + add.price, 0);
+              const addsPrice = (item.additions || []).reduce((sum: number, add: any) => sum + (add.price || 0), 0);
               return (
                 <div key={idx} className="flex flex-col gap-3 bg-slate-50/80 p-5 rounded-[2rem] border border-slate-100 relative">
                   <button onClick={() => removeItem(idx)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button>
-                  <div className="flex items-center gap-4"><img src={item.image} className="w-14 h-14 rounded-xl object-cover shadow-lg shrink-0" /><div className="flex-1 min-w-0"><p className="text-[11px] font-black uppercase italic text-slate-900 truncate mb-1">{item.name}</p><p className="text-[9px] font-black text-orange-600 uppercase tracking-widest">${formatPrice(item.price + addsPrice)} c/u</p><p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">CANTIDAD: {item.quantity}</p></div></div>
+                  <div className="flex items-center gap-4"><img src={item.image} alt={item.name} className="w-14 h-14 rounded-xl object-cover shadow-lg shrink-0" /><div className="flex-1 min-w-0"><p className="text-[11px] font-black uppercase italic text-slate-900 truncate mb-1">{item.name}</p><p className="text-[9px] font-black text-orange-600 uppercase tracking-widest">${formatPrice((item.price || 0) + addsPrice)} c/u</p><p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">CANTIDAD: {item.quantity}</p></div></div>
                 </div>
               );
             })}
@@ -950,7 +969,7 @@ const AdminForm = ({ item, categories, onSave, onClose }: any) => {
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setData({ ...data, image: reader.result as string }); reader.readAsDataURL(file); } };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
+    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} alt="Preview" className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
   );
 };
 

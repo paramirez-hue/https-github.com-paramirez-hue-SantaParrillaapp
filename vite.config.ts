@@ -5,18 +5,18 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Definimos la API_KEY y proveemos un objeto process básico para evitar errores en Vercel
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
-    'process.env': {},
-    'global': 'window'
+    // Inyecta la API KEY para que esté disponible en el cliente
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'lucide-react', '@supabase/supabase-js']
+          'vendor': ['react', 'react-dom', 'lucide-react'],
+          'genai': ['@google/genai'],
+          'supabase': ['@supabase/supabase-js']
         }
       }
     }
