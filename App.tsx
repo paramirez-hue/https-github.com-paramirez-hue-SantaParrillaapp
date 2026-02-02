@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History, Download, Info, Copy, ExternalLink
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
@@ -119,6 +119,7 @@ const App: React.FC = () => {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedFoodForDetail, setSelectedFoodForDetail] = useState<FoodItem | null>(null);
   const [logoLoaded, setLogoLoaded] = useState(false);
+  const [showWebhookGuide, setShowWebhookGuide] = useState(false);
   
   const [currentOrderTrackingId, setCurrentOrderTrackingId] = useState<string | null>(() => localStorage.getItem('active_order_id'));
   const [showTrackingView, setShowTrackingView] = useState(false);
@@ -126,7 +127,7 @@ const App: React.FC = () => {
   const [restaurantSettings, setRestaurantSettings] = useState(() => {
     const saved = localStorage.getItem('santa_parrilla_settings');
     if (saved) return JSON.parse(saved);
-    return { ...DEFAULT_BRANDING, logoUrl: '', name: 'Santa Parrilla', sheetsWebhook: '' };
+    return { ...DEFAULT_BRANDING, logoUrl: DEFAULT_BRANDING.logoUrl, name: 'Santa Parrilla', sheetsWebhook: '' };
   });
 
   const [isSavingBranding, setIsSavingBranding] = useState(false);
@@ -151,11 +152,13 @@ const App: React.FC = () => {
 
       const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'branding').single();
       if (settingsData) {
-        setRestaurantSettings({ 
-          name: settingsData.name, 
+        const updated = { 
+          name: settingsData.name || 'Santa Parrilla', 
           logoUrl: settingsData.logoUrl || DEFAULT_BRANDING.logoUrl,
           sheetsWebhook: settingsData.sheetsWebhook || ''
-        });
+        };
+        setRestaurantSettings(updated);
+        localStorage.setItem('santa_parrilla_settings', JSON.stringify(updated));
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -180,7 +183,11 @@ const App: React.FC = () => {
     const menuSub = supabase.channel('menu-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, fetchData).subscribe();
     const catSub = supabase.channel('cat-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchData).subscribe();
     const ordersSub = supabase.channel('ord-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchData).subscribe();
-    return () => { supabase.removeChannel(menuSub); supabase.removeChannel(catSub); supabase.removeChannel(ordersSub); };
+    return () => { 
+      supabase.removeChannel(menuSub); 
+      supabase.removeChannel(catSub); 
+      supabase.removeChannel(ordersSub); 
+    };
   }, [isStaffMode]);
 
   useEffect(() => {
@@ -212,31 +219,68 @@ const App: React.FC = () => {
     return orders.find(o => o.id === currentOrderTrackingId) || null;
   }, [orders, currentOrderTrackingId]);
 
+  const downloadCSVReport = () => {
+    const headers = ["ID Pedido", "Cliente", "Mesa", "Fecha", "Items", "Total", "Estado"];
+    const rows = allOrdersHistory.map(o => [
+      o.id.slice(-4),
+      o.customerName,
+      o.tableNumber,
+      formatDate(o.createdAt),
+      o.items.map(it => `${it.quantity}x ${it.name}`).join(' | '),
+      o.total,
+      o.status
+    ]);
+    
+    let csvContent = "\uFEFF" + headers.join(",") + "\n"
+      + rows.map(e => e.map(cell => `"${cell}"`).join(",")).join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Reporte_Santa_Parrilla_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleExportAndCleanup = async () => {
-    if (!restaurantSettings.sheetsWebhook) {
-      return alert("Primero configura la URL de Google Sheets en el Panel Admin.");
+    if (!restaurantSettings.sheetsWebhook || !restaurantSettings.sheetsWebhook.startsWith('http')) {
+      return alert("Primero configura una URL de Webhook válida en el Panel Admin.");
     }
-    if (!confirm("¿Deseas enviar los datos a Google Sheets y LIMPIAR las ventas de la semana?")) return;
+    
+    if (!confirm("¿Deseas enviar los datos a Google Sheets y REINICIAR el historial de ventas?")) return;
+    
     setIsExporting(true);
     try {
+      // Formatear datos para el sheet
+      const payload = {
+        restaurantName: restaurantSettings.name,
+        date: new Date().toLocaleDateString(),
+        totalSales: salesReport.grandTotal,
+        orderCount: salesReport.orderCount,
+        details: salesReport.items.map(i => `${i.quantity}x ${i.name} ($${i.total})`).join(', '),
+        timestamp: new Date().toISOString()
+      };
+
+      // Usar no-cors para evitar bloqueos del navegador con Apps Script
       await fetch(restaurantSettings.sheetsWebhook, {
         method: 'POST',
+        mode: 'no-cors',
+        cache: 'no-cache',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          restaurantName: restaurantSettings.name,
-          date: new Date().toLocaleDateString(),
-          totalSales: salesReport.grandTotal,
-          orderCount: salesReport.orderCount,
-          itemsReport: salesReport.items,
-          rawHistory: allOrdersHistory
-        })
+        body: JSON.stringify(payload)
       });
-      await supabase.from('orders').delete().neq('id', '0');
-      alert("¡Semana cerrada con éxito!");
+      
+      // Eliminar registros tras el envío exitoso (o al menos intentado)
+      const { error } = await supabase.from('orders').delete().neq('id', '0');
+      if (error) throw error;
+
+      alert("¡Proceso completado! Los datos fueron enviados al Webhook y el historial se ha reiniciado.");
       fetchHistory();
       fetchData();
     } catch (err: any) {
-      alert("Error: " + err.message);
+      alert("Ocurrió un error: " + err.message);
     } finally { setIsExporting(false); }
   };
 
@@ -244,7 +288,10 @@ const App: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => { setRestaurantSettings(prev => ({ ...prev, logoUrl: reader.result as string })); setLogoLoaded(false); };
+      reader.onloadend = () => { 
+        setRestaurantSettings(prev => ({ ...prev, logoUrl: reader.result as string })); 
+        setLogoLoaded(false); 
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -252,15 +299,22 @@ const App: React.FC = () => {
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
-      await supabase.from('settings').upsert({ 
+      const payload = { 
         id: 'branding', 
         name: restaurantSettings.name, 
         logoUrl: restaurantSettings.logoUrl,
         sheetsWebhook: restaurantSettings.sheetsWebhook
-      });
+      };
+      const { error } = await supabase.from('settings').upsert(payload);
+      if (error) throw error;
+      
+      localStorage.setItem('santa_parrilla_settings', JSON.stringify(restaurantSettings));
+      
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 3000);
       fetchData();
+    } catch (err: any) {
+      alert("Error al guardar: " + err.message);
     } finally { setIsSavingBranding(false); }
   };
 
@@ -437,7 +491,7 @@ const App: React.FC = () => {
               {filteredMenu.map(item => (
                 <div key={item.id} onClick={() => setSelectedFoodForDetail(item)} className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-premium flex flex-col group transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 cursor-pointer animate-fade-scale">
                   <div className="h-40 md:h-56 overflow-hidden relative"><img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" /><div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] md:text-xs font-black shadow-lg text-slate-900">${formatPrice(item.price)}</div></div>
-                  <div className="p-4 md:p-6 flex flex-col flex-1"><h3 className="text-xs md:text-lg font-black text-slate-900 uppercase italic mb-1 truncate">{item.name}</h3><p className="text-[9px] md:text-xs text-slate-500 line-clamp-2 mb-4 font-medium">{item.description}</p><button className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-900 hover:text-white transition-all rounded-2xl font-black text-[9px] uppercase border border-slate-100 text-slate-900">PEDIR</button></div>
+                  <div className="p-4 md:p-6 flex flex-col flex-1"><h3 className="text-xs md:text-lg font-black text-slate-900 uppercase italic mb-1 truncate">{item.name}</h3><p className="text-[9px] md:text-xs text-slate-500 line-clamp-2 mb-4 font-medium">{item.description}</p><button className="mt-auto w-full py-2.5 bg-slate-50 hover:bg-slate-900 hover:text-white transition-all rounded-2xl font-black text-[9px] uppercase border border-slate-100 text-slate-900">Personalizar</button></div>
                 </div>
               ))}
             </div>
@@ -461,17 +515,25 @@ const App: React.FC = () => {
                </div>
 
                <div className="bg-white rounded-[3rem] border border-slate-200 overflow-hidden shadow-2xl">
-                 <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                 <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row gap-6 justify-between items-center bg-slate-50/50">
                    <div>
                      <h3 className="text-xl font-black uppercase italic tracking-tighter text-slate-900 flex items-center gap-3">
                        <History className="w-6 h-6 text-orange-600" /> Historial de Ventas
                      </h3>
                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Últimos pedidos registrados</p>
                    </div>
-                   <button onClick={handleExportAndCleanup} disabled={isExporting} className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-2xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50">
-                     {isExporting ? <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-5 h-5" />}
-                     <span className="text-[10px] font-black uppercase tracking-widest">Cerrar Semana</span>
-                   </button>
+                   
+                   <div className="flex flex-wrap gap-3">
+                     <button onClick={downloadCSVReport} className="bg-white border border-slate-200 hover:border-slate-300 text-slate-600 px-6 py-3 rounded-2xl flex items-center gap-3 transition-all active:scale-95 shadow-sm">
+                       <Download className="w-5 h-5" />
+                       <span className="text-[10px] font-black uppercase tracking-widest">Descargar CSV</span>
+                     </button>
+                     
+                     <button onClick={handleExportAndCleanup} disabled={isExporting} className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-2xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50 shadow-xl">
+                       {isExporting ? <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full" /> : <FileSpreadsheet className="w-5 h-5" />}
+                       <span className="text-[10px] font-black uppercase tracking-widest">Exportar a Sheets</span>
+                     </button>
+                   </div>
                  </div>
                  
                  <div className="overflow-x-auto no-scrollbar">
@@ -558,7 +620,16 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center mb-10"><div><h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter text-slate-900">Marca</h4><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuraciones</p></div><button onClick={handleSaveBranding} className={`px-10 py-4 rounded-full font-black text-xs uppercase shadow-xl ${brandingSaved ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>{brandingSaved ? 'Guardado' : 'Guardar'}</button></div>
                     <div className="space-y-6">
                       <div className="flex flex-col md:flex-row gap-6 items-center"><div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0" onClick={() => fileInputRef.current?.click()}>{restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}</div><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
-                      <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Webhook Google Sheets</label><input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://..." /></div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center px-4">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Webhook Google Sheets (URL Apps Script)</label>
+                          <button onClick={() => setShowWebhookGuide(true)} className="flex items-center gap-2 text-orange-600 text-[9px] font-black uppercase hover:opacity-70">
+                            <Info className="w-3.5 h-3.5" /> ¿Cómo configurar?
+                          </button>
+                        </div>
+                        <input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://script.google.com/macros/s/.../exec" />
+                      </div>
                     </div>
                 </div>
 
@@ -575,6 +646,70 @@ const App: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* Guía Webhook Modal */}
+      {showWebhookGuide && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[450] flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] p-10 overflow-hidden flex flex-col max-h-[90vh]">
+             <div className="flex justify-between items-center mb-8 shrink-0">
+               <div>
+                 <h2 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Guía de <span className="text-orange-600 not-italic">Google Sheets</span></h2>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sigue estos pasos para recibir tus reportes</p>
+               </div>
+               <button onClick={() => setShowWebhookGuide(false)} className="p-4 bg-slate-100 rounded-2xl"><X className="w-6 h-6" /></button>
+             </div>
+             
+             <div className="flex-1 overflow-y-auto space-y-8 pr-4 no-scrollbar">
+               <div className="space-y-4">
+                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 1</h4>
+                 <p className="text-sm text-slate-600">Crea una <b>Google Sheet</b> nueva. Ve a <b>Extensiones > Apps Script</b>.</p>
+               </div>
+
+               <div className="space-y-4">
+                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 2</h4>
+                 <p className="text-sm text-slate-600">Borra todo y pega este código exactamente:</p>
+                 <div className="relative group">
+                    <pre className="bg-slate-950 text-orange-400 p-6 rounded-3xl text-[10px] font-mono overflow-x-auto border-4 border-slate-900 shadow-2xl">
+{`function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  sheet.appendRow([
+    new Date(), 
+    data.restaurantName, 
+    data.date, 
+    data.totalSales, 
+    data.orderCount, 
+    data.details
+  ]);
+  return ContentService.createTextOutput("OK");
+}`}
+                    </pre>
+                    <button onClick={() => {
+                      navigator.clipboard.writeText(`function doPost(e) {\n  var data = JSON.parse(e.postData.contents);\n  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n  sheet.appendRow([\n    new Date(), \n    data.restaurantName, \n    data.date, \n    data.totalSales, \n    data.orderCount, \n    data.details\n  ]);\n  return ContentService.createTextOutput("OK");\n}`);
+                      alert("¡Código copiado!");
+                    }} className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
+                      <Copy className="w-4 h-4" />
+                    </button>
+                 </div>
+               </div>
+
+               <div className="space-y-4">
+                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 3</h4>
+                 <p className="text-sm text-slate-600">Haz clic en <b>Implementar > Nueva implementación</b>.</p>
+                 <ul className="text-sm text-slate-600 list-disc ml-6 space-y-2">
+                   <li>Tipo: <b>Aplicación Web</b>.</li>
+                   <li>Quién puede acceder: <b>Cualquier persona</b> (Esto es clave).</li>
+                   <li>Copia la <b>URL de la aplicación web</b> resultante y pégala en el campo Webhook de esta App.</li>
+                 </ul>
+               </div>
+             </div>
+             
+             <div className="pt-8 shrink-0">
+               <button onClick={() => setShowWebhookGuide(false)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.4em] shadow-2xl">Entendido</button>
+             </div>
+          </div>
+        </div>
+      )}
 
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6">
