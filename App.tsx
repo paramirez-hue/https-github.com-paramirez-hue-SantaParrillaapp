@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History, Download, Info, Copy, ExternalLink
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History, Download, Info, Copy, ExternalLink, Send
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
@@ -133,6 +133,7 @@ const App: React.FC = () => {
   const [isSavingBranding, setIsSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = async () => {
@@ -244,6 +245,30 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const testWebhook = async () => {
+    if (!restaurantSettings.sheetsWebhook || !restaurantSettings.sheetsWebhook.startsWith('http')) {
+      return alert("URL no válida");
+    }
+    setIsTestingWebhook(true);
+    try {
+      // Envío de prueba
+      await fetch(restaurantSettings.sheetsWebhook, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          test: true,
+          message: "Prueba de conexión desde Santa Parrilla",
+          timestamp: new Date().toISOString()
+        })
+      });
+      alert("Se envió la señal de prueba. Verifica tu Google Sheet (debe aparecer una fila nueva con la fecha actual). Si no aparece, verifica que implementaste el script como 'Cualquier persona' (Anyone).");
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setIsTestingWebhook(false);
+    }
+  };
+
   const handleExportAndCleanup = async () => {
     if (!restaurantSettings.sheetsWebhook || !restaurantSettings.sheetsWebhook.startsWith('http')) {
       return alert("Primero configura una URL de Webhook válida en el Panel Admin.");
@@ -253,7 +278,6 @@ const App: React.FC = () => {
     
     setIsExporting(true);
     try {
-      // Formatear datos para el sheet
       const payload = {
         restaurantName: restaurantSettings.name,
         date: new Date().toLocaleDateString(),
@@ -263,24 +287,22 @@ const App: React.FC = () => {
         timestamp: new Date().toISOString()
       };
 
-      // Usar no-cors para evitar bloqueos del navegador con Apps Script
+      // El modo no-cors es necesario para Apps Script
       await fetch(restaurantSettings.sheetsWebhook, {
         method: 'POST',
         mode: 'no-cors',
         cache: 'no-cache',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       
-      // Eliminar registros tras el envío exitoso (o al menos intentado)
       const { error } = await supabase.from('orders').delete().neq('id', '0');
       if (error) throw error;
 
-      alert("¡Proceso completado! Los datos fueron enviados al Webhook y el historial se ha reiniciado.");
+      alert("¡Exportación exitosa! Se han borrado los registros locales y enviado la información a la nube.");
       fetchHistory();
       fetchData();
     } catch (err: any) {
-      alert("Ocurrió un error: " + err.message);
+      alert("Error al exportar: " + err.message);
     } finally { setIsExporting(false); }
   };
 
@@ -289,7 +311,7 @@ const App: React.FC = () => {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => { 
-        setRestaurantSettings(prev => ({ ...prev, logoUrl: reader.result as string })); 
+        setRestaurantSettings((prev: any) => ({ ...prev, logoUrl: reader.result as string })); 
         setLogoLoaded(false); 
       };
       reader.readAsDataURL(file);
@@ -331,7 +353,7 @@ const App: React.FC = () => {
   };
 
   const addToCart = (item: FoodItem, quantity: number = 1, additions: FoodItem[] = []) => {
-    setOrderItems(prev => [...prev, { ...item, quantity, additions }]);
+    setOrderItems((prev: any[]) => [...prev, { ...item, quantity, additions }]);
     setSelectedFoodForDetail(null);
   };
 
@@ -621,14 +643,19 @@ const App: React.FC = () => {
                     <div className="space-y-6">
                       <div className="flex flex-col md:flex-row gap-6 items-center"><div className="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center cursor-pointer overflow-hidden border border-white/10 shrink-0" onClick={() => fileInputRef.current?.click()}>{restaurantSettings.logoUrl ? <img src={restaurantSettings.logoUrl} className="w-full h-full object-cover" /> : <Upload className="w-8 h-8 text-orange-500" />}</div><input type="text" value={restaurantSettings.name} onChange={e => setRestaurantSettings({...restaurantSettings, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black text-sm outline-none border border-slate-200" placeholder="Nombre" /><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
                       
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         <div className="flex justify-between items-center px-4">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Webhook Google Sheets (URL Apps Script)</label>
                           <button onClick={() => setShowWebhookGuide(true)} className="flex items-center gap-2 text-orange-600 text-[9px] font-black uppercase hover:opacity-70">
                             <Info className="w-3.5 h-3.5" /> ¿Cómo configurar?
                           </button>
                         </div>
-                        <input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://script.google.com/macros/s/.../exec" />
+                        <div className="flex gap-3">
+                          <input type="text" value={restaurantSettings.sheetsWebhook} onChange={e => setRestaurantSettings({...restaurantSettings, sheetsWebhook: e.target.value})} className="flex-1 p-5 bg-slate-50 rounded-3xl font-mono text-[10px] outline-none border border-slate-200" placeholder="https://script.google.com/macros/s/.../exec" />
+                          <button onClick={testWebhook} disabled={isTestingWebhook} className="bg-slate-900 text-white px-6 rounded-3xl font-black text-[9px] uppercase transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2">
+                            {isTestingWebhook ? 'Probando...' : <><Send className="w-3 h-3" /> Probar</>}
+                          </button>
+                        </div>
                       </div>
                     </div>
                 </div>
@@ -654,38 +681,57 @@ const App: React.FC = () => {
              <div className="flex justify-between items-center mb-8 shrink-0">
                <div>
                  <h2 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Guía de <span className="text-orange-600 not-italic">Google Sheets</span></h2>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sigue estos pasos para recibir tus reportes</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configuración paso a paso</p>
                </div>
                <button onClick={() => setShowWebhookGuide(false)} className="p-4 bg-slate-100 rounded-2xl"><X className="w-6 h-6" /></button>
              </div>
              
              <div className="flex-1 overflow-y-auto space-y-8 pr-4 no-scrollbar">
+               <div className="bg-orange-50 border border-orange-100 p-6 rounded-3xl">
+                 <p className="text-xs text-orange-800 font-bold leading-relaxed">
+                   <AlertCircle className="w-4 h-4 inline mr-2 mb-1" />
+                   IMPORTANTE: Sin este script, los datos no llegarán a tu hoja de cálculo.
+                 </p>
+               </div>
+
                <div className="space-y-4">
                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 1</h4>
-                 <p className="text-sm text-slate-600">Crea una <b>Google Sheet</b> nueva. Ve a <b>Extensiones > Apps Script</b>.</p>
+                 <p className="text-sm text-slate-600">En tu Google Sheet, ve a <b>Extensiones > Apps Script</b>.</p>
                </div>
 
                <div className="space-y-4">
                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 2</h4>
-                 <p className="text-sm text-slate-600">Borra todo y pega este código exactamente:</p>
+                 <p className="text-sm text-slate-600">Pega este código (borrando lo anterior):</p>
                  <div className="relative group">
                     <pre className="bg-slate-950 text-orange-400 p-6 rounded-3xl text-[10px] font-mono overflow-x-auto border-4 border-slate-900 shadow-2xl">
 {`function doPost(e) {
-  var data = JSON.parse(e.postData.contents);
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  sheet.appendRow([
-    new Date(), 
-    data.restaurantName, 
-    data.date, 
-    data.totalSales, 
-    data.orderCount, 
-    data.details
-  ]);
-  return ContentService.createTextOutput("OK");
+  try {
+    var contents = e.postData.contents;
+    var data = JSON.parse(contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    
+    // Si es una prueba
+    if (data.test) {
+      sheet.appendRow([new Date(), "PRUEBA DE CONEXIÓN", "", "", "", ""]);
+      return ContentService.createTextOutput("OK");
+    }
+
+    sheet.appendRow([
+      new Date(), 
+      data.restaurantName, 
+      data.date, 
+      data.totalSales, 
+      data.orderCount, 
+      data.details
+    ]);
+    return ContentService.createTextOutput("ÉXITO");
+  } catch (err) {
+    return ContentService.createTextOutput("ERROR: " + err.message);
+  }
 }`}
                     </pre>
                     <button onClick={() => {
-                      navigator.clipboard.writeText(`function doPost(e) {\n  var data = JSON.parse(e.postData.contents);\n  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n  sheet.appendRow([\n    new Date(), \n    data.restaurantName, \n    data.date, \n    data.totalSales, \n    data.orderCount, \n    data.details\n  ]);\n  return ContentService.createTextOutput("OK");\n}`);
+                      navigator.clipboard.writeText(`function doPost(e) {\n  try {\n    var contents = e.postData.contents;\n    var data = JSON.parse(contents);\n    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n    \n    if (data.test) {\n      sheet.appendRow([new Date(), "PRUEBA DE CONEXIÓN", "", "", "", ""]);\n      return ContentService.createTextOutput("OK");\n    }\n\n    sheet.appendRow([\n      new Date(), \n      data.restaurantName, \n      data.date, \n      data.totalSales, \n      data.orderCount, \n      data.details\n    ]);\n    return ContentService.createTextOutput("ÉXITO");\n  } catch (err) {\n    return ContentService.createTextOutput("ERROR: " + err.message);\n  }\n}`);
                       alert("¡Código copiado!");
                     }} className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all">
                       <Copy className="w-4 h-4" />
@@ -694,12 +740,13 @@ const App: React.FC = () => {
                </div>
 
                <div className="space-y-4">
-                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 3</h4>
-                 <p className="text-sm text-slate-600">Haz clic en <b>Implementar > Nueva implementación</b>.</p>
-                 <ul className="text-sm text-slate-600 list-disc ml-6 space-y-2">
+                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 bg-slate-100 inline-block px-3 py-1 rounded-lg">Paso 3 (CRUCIAL)</h4>
+                 <p className="text-sm text-slate-600">Clic en <b>Implementar > Nueva implementación</b>.</p>
+                 <ul className="text-sm text-slate-600 list-disc ml-6 space-y-3">
                    <li>Tipo: <b>Aplicación Web</b>.</li>
-                   <li>Quién puede acceder: <b>Cualquier persona</b> (Esto es clave).</li>
-                   <li>Copia la <b>URL de la aplicación web</b> resultante y pégala en el campo Webhook de esta App.</li>
+                   <li>Ejecutar como: <b>Yo</b>.</li>
+                   <li>Quién puede acceder: <b>Cualquier persona (Anyone)</b>. <span className="text-rose-600 font-bold">¡No olvides este paso!</span></li>
+                   <li>Copia la URL generada y pégala en el Panel Admin de esta App.</li>
                  </ul>
                </div>
              </div>
@@ -831,7 +878,7 @@ const SidebarItem = ({ icon, label, active, onClick, badge }: any) => (
 const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, additions: FoodItem[], onAdd: (item: FoodItem, qty: number, additions: FoodItem[]) => void, onClose: () => void }) => {
   const [qty, setQty] = useState(1);
   const [selectedAdds, setSelectedAdds] = useState<FoodItem[]>([]);
-  const toggleAddition = (add: FoodItem) => setSelectedAdds(prev => prev.find(i => i.id === add.id) ? prev.filter(i => i.id !== add.id) : [...prev, add]);
+  const toggleAddition = (add: FoodItem) => setSelectedAdds((prev: any[]) => prev.find(i => i.id === add.id) ? prev.filter(i => i.id !== add.id) : [...prev, add]);
   const totalPrice = (item.price + selectedAdds.reduce((sum, a) => sum + a.price, 0)) * qty;
 
   return (
@@ -903,7 +950,7 @@ const AdminForm = ({ item, categories, onSave, onClose }: any) => {
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setData({ ...data, image: reader.result as string }); reader.readAsDataURL(file); } };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
+    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
   );
 };
 

@@ -5,8 +5,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Definimos específicamente la API_KEY para evitar serializar todo el objeto process.env
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    // Definimos la API_KEY y proveemos un objeto process básico para evitar errores en Vercel
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
+    'process.env': {},
     'global': 'window'
   },
   build: {
