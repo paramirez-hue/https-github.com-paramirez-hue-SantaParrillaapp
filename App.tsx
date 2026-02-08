@@ -140,6 +140,7 @@ const App: React.FC = () => {
       setMenuItems(menuData || []);
 
       const { data: catData } = await supabase.from('categories').select('*').order('name');
+      // Mostramos las iniciales solo si la DB está vacía para no duplicar o confundir
       setCategories(catData && catData.length > 0 ? catData : INITIAL_CATEGORIES);
 
       const { data: ordersData } = await supabase
@@ -573,12 +574,12 @@ const App: React.FC = () => {
                 </div>
             </div>
           )}
-        </main>F
+        </main>
       </div>
 
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
+          <div className="bg-white w-full max-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
              <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
              <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '9999') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
              <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
@@ -592,19 +593,32 @@ const App: React.FC = () => {
 
       {isAdminFormOpen && (
         <AdminForm item={editingItem} categories={categories} onSave={async (d: any) => { 
-          const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add'));
-          if (d.id && !isInitial) await supabase.from('menu').upsert(d);
-          else { const { id, ...newItem } = d; await supabase.from('menu').insert([newItem]); }
-          setIsAdminFormOpen(false); fetchData();
+          try {
+            const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add'));
+            if (d.id && !isInitial) await supabase.from('menu').upsert(d);
+            else { const { id, ...newItem } = d; await supabase.from('menu').insert([newItem]); }
+            setIsAdminFormOpen(false); fetchData();
+          } catch (e) { console.error("Error saving item", e); }
         }} onClose={() => setIsAdminFormOpen(false)} />
       )}
 
       {isCategoryFormOpen && (
         <CategoryForm category={editingCategory} onSave={async (d: any) => { 
-          const isInitial = d.id && d.id.startsWith('cat');
-          if (d.id && !isInitial) await supabase.from('categories').upsert(d); 
-          else { const { id, ...newCat } = d; await supabase.from('categories').insert([newCat]); }
-          setIsCategoryFormOpen(false); fetchData(); 
+          try {
+            // Un ID que empieza por 'cat' es un ID de INITIAL_CATEGORIES (local)
+            const isInitial = d.id && typeof d.id === 'string' && d.id.startsWith('cat');
+            if (d.id && !isInitial) {
+              await supabase.from('categories').upsert(d); 
+            } else { 
+              // Si es nuevo (id undefined) o es uno inicial, lo insertamos como nuevo en DB
+              const { id, ...newCat } = d; 
+              await supabase.from('categories').insert([newCat]); 
+            }
+            setIsCategoryFormOpen(false); 
+            fetchData(); 
+          } catch (e) {
+            console.error("Error al guardar categoría:", e);
+          }
         }} onClose={() => setIsCategoryFormOpen(false)} />
       )}
     </div>
@@ -706,7 +720,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
         <div className="relative h-56 md:h-80 shrink-0">
           <img src={item.image} className="w-full h-full object-cover" />
           <button onClick={onClose} className="absolute top-6 right-6 p-3 bg-black/20 backdrop-blur-md rounded-2xl text-white"><X className="w-6 h-6" /></button>
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/80 to-transparent p-6 md:p-10 pt-16">
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-t from-white via-white/80 to-transparent p-6 md:p-10 pt-16">
              <div className="flex justify-between items-end gap-4"><div className="min-w-0"><h2 className="text-2xl md:text-5xl font-black uppercase italic tracking-tighter text-slate-900 leading-tight mb-1 truncate">{item.name}</h2><p className="text-[9px] md:text-xs font-black text-orange-600 uppercase tracking-widest">{item.category}</p></div><div className="text-right shrink-0"><span className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Subtotal</span><span className="text-2xl md:text-4xl font-black text-slate-900 italic tracking-tighter leading-none">${formatPrice(totalPrice)}</span></div></div>
           </div>
         </div>
