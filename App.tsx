@@ -3,8 +3,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShoppingBag, ChefHat, Plus, Minus, X,
   Timer, ShoppingBasket, Edit2, Trash2, Lock, LogOut, 
-  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History
+  Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History, PieChart as PieChartIcon
 } from 'lucide-react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, Legend
+} from 'recharts';
 import { createClient } from '@supabase/supabase-js';
 import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
 import { INITIAL_MENU, INITIAL_CATEGORIES, DEFAULT_BRANDING } from './constants';
@@ -189,24 +193,53 @@ const App: React.FC = () => {
   }, [activeView]);
 
   const salesReport = useMemo(() => {
-    const report: Record<string, { name: string, quantity: number, total: number }> = {};
+    const itemMap: Record<string, { name: string, quantity: number, total: number }> = {};
+    const categoryMap: Record<string, number> = {};
+    const dailyMap: Record<string, number> = {};
+    
     let grandTotal = 0;
-    allOrdersHistory.forEach(order => {
+    
+    // Sort history by date to ensure proper chart flow
+    const sortedHistory = [...allOrdersHistory].sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    sortedHistory.forEach(order => {
       grandTotal += order.total;
+      
+      // Daily Sales Calculation
+      const date = new Date(order.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+      dailyMap[date] = (dailyMap[date] || 0) + order.total;
+
+      // Item and Category Sales Calculation
       order.items.forEach(item => {
-        if (!report[item.name]) report[item.name] = { name: item.name, quantity: 0, total: 0 };
-        report[item.name].quantity += item.quantity;
-        const adds = (item.additions || []).reduce((s, a) => s + a.price, 0);
-        report[item.name].total += (item.price + adds) * item.quantity;
+        // Item breakdown
+        if (!itemMap[item.name]) itemMap[item.name] = { name: item.name, quantity: 0, total: 0 };
+        itemMap[item.name].quantity += item.quantity;
+        const itemAdds = (item.additions || []).reduce((s, a) => s + a.price, 0);
+        const itemTotal = (item.price + itemAdds) * item.quantity;
+        itemMap[item.name].total += itemTotal;
+
+        // Category breakdown
+        const catName = item.category || 'Otros';
+        categoryMap[catName] = (categoryMap[catName] || 0) + itemTotal;
       });
     });
+
+    const categorySales = Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
+    const dailySales = Object.entries(dailyMap).map(([date, total]) => ({ date, total }));
+
     return {
-      items: Object.values(report).sort((a, b) => b.quantity - a.quantity),
+      items: Object.values(itemMap).sort((a, b) => b.quantity - a.quantity),
       grandTotal,
       orderCount: allOrdersHistory.length,
+      categorySales,
+      dailySales,
       history: allOrdersHistory
     };
   }, [allOrdersHistory]);
+
+  const CHART_COLORS = ['#F97316', '#0F172A', '#3B82F6', '#10B981', '#6366F1', '#EC4899', '#F59E0B'];
 
   const trackedOrder = useMemo(() => {
     if (!currentOrderTrackingId) return null;
@@ -459,6 +492,87 @@ const App: React.FC = () => {
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-premium flex items-center gap-6">
                     <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center shadow-inner"><TrendingUp className="w-8 h-8" /></div>
                     <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items Vendidos</p><h4 className="text-3xl font-black text-slate-900 italic">{salesReport.items.reduce((acc, curr) => acc + curr.quantity, 0)}</h4></div>
+                  </div>
+               </div>
+
+               {/* Charts Section */}
+               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Daily Sales Chart */}
+                  <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-2xl space-y-6">
+                    <div>
+                      <h3 className="text-xl font-black uppercase italic tracking-tighter text-slate-900 flex items-center gap-3">
+                        <BarChart3 className="w-6 h-6 text-orange-600" /> Ventas Diarias
+                      </h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ingresos en los últimos días</p>
+                    </div>
+                    <div className="h-80 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={salesReport.dailySales}>
+                          <defs>
+                            <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#F97316" stopOpacity={0.1}/>
+                              <stop offset="95%" stopColor="#F97316" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                          <XAxis 
+                            dataKey="date" 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{ fontSize: 10, fontWeight: 900, fill: '#94A3B8' }} 
+                            dy={10}
+                          />
+                          <YAxis 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{ fontSize: 10, fontWeight: 900, fill: '#94A3B8' }}
+                            tickFormatter={(value) => `$${value}`}
+                          />
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
+                            itemStyle={{ fontWeight: 900, fontSize: '12px' }}
+                            labelStyle={{ fontWeight: 900, marginBottom: '4px', fontSize: '10px', color: '#94A3B8' }}
+                          />
+                          <Area type="monotone" dataKey="total" stroke="#F97316" strokeWidth={4} fillOpacity={1} fill="url(#colorTotal)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Category Pie Chart */}
+                  <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-2xl space-y-6">
+                    <div>
+                      <h3 className="text-xl font-black uppercase italic tracking-tighter text-slate-900 flex items-center gap-3">
+                        <PieChartIcon className="w-6 h-6 text-orange-600" /> Ventas por Categoría
+                      </h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Distribución de ingresos</p>
+                    </div>
+                    <div className="h-80 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={salesReport.categorySales}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={100}
+                            paddingAngle={5}
+                            dataKey="value"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          >
+                            {salesReport.categorySales.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
+                            itemStyle={{ fontWeight: 900, fontSize: '12px' }}
+                          />
+                          <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '9px', tracking: '0.1em' }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                </div>
 

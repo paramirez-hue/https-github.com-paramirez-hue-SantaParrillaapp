@@ -1,4 +1,3 @@
-
 {
   "name": "santa-parrilla-app",
   "private": true,
@@ -11,10 +10,11 @@
   },
   "dependencies": {
     "@google/genai": "^1.37.0",
-    "lucide-react": "^0.562.0",
     "@supabase/supabase-js": "^2.45.4",
+    "lucide-react": "^0.562.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
