@@ -1,7 +1,7 @@
 {
   "name": "Santa Parrilla App",
   "short_name": "SantaParrilla",
-  "description": "Sistema profesional de gestión de pedidos",
+  "description": "Sistema profesional de gestión de pedidos con IA",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",

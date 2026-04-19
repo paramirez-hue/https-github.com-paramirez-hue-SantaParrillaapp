@@ -109,6 +109,8 @@ const App: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [customerName, setCustomerName] = useState('');
   const [tableNumber, setTableNumber] = useState('');
+  const [orderType, setOrderType] = useState<'TABLE' | 'DELIVERY'>('TABLE');
+  const [address, setAddress] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
@@ -137,10 +139,9 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
       const { data: menuData } = await supabase.from('menu').select('*');
-      setMenuItems(menuData || []);
+      setMenuItems(menuData && menuData.length > 0 ? menuData : INITIAL_MENU);
 
       const { data: catData } = await supabase.from('categories').select('*').order('name');
-      // Mostramos las iniciales solo si la DB está vacía para no duplicar o confundir
       setCategories(catData && catData.length > 0 ? catData : INITIAL_CATEGORIES);
 
       const { data: ordersData } = await supabase
@@ -245,7 +246,7 @@ const App: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => { setRestaurantSettings(prev => ({ ...prev, logoUrl: reader.result as string })); setLogoLoaded(false); };
+      reader.onloadend = () => { setRestaurantSettings((prev: any) => ({ ...prev, logoUrl: reader.result as string })); setLogoLoaded(false); };
       reader.readAsDataURL(file);
     }
   };
@@ -277,6 +278,71 @@ const App: React.FC = () => {
     fetchData();
   };
 
+  const handleSeedDatabase = async () => {
+    const choice = confirm('¿Quieres sincronizar el menú? \n\nOK: Actualizar platos existentes y agregar nuevos (Restaurar imágenes y descripciones). \nCancelar: Solo agregar platos que falten.');
+    
+    setIsSavingBranding(true); // Reuse a loading state or just proceed
+    try {
+      // Get existing items
+      const { data: existingItems } = await supabase.from('menu').select('*');
+      const existingMap = new Map((existingItems || []).map(i => [i.name, i]));
+      
+      const newItems = [];
+      const updates = [];
+
+      for (const item of INITIAL_MENU) {
+        const existing = existingMap.get(item.name);
+        if (existing) {
+          if (choice) { // Update mode
+            const { id: _, ...itemWithoutId } = item;
+            updates.push({
+              id: existing.id,
+              ...itemWithoutId
+            });
+          }
+        } else {
+          const { id, ...rest } = item;
+          newItems.push(rest);
+        }
+      }
+
+      if (newItems.length > 0) {
+        const { error: insError } = await supabase.from('menu').insert(newItems);
+        if (insError) throw insError;
+      }
+
+      if (choice && updates.length > 0) {
+        // Supabase upsert works by matching the primary key
+        const { error: upsError } = await supabase.from('menu').upsert(updates.map(u => {
+           const { id, ...rest } = u;
+           return { id, ...rest };
+        }));
+        if (upsError) throw upsError;
+      }
+
+      alert(`Proceso completado. \nNuevos: ${newItems.length} \nActualizados: ${choice ? updates.length : 0}`);
+
+      // Also seed categories if needed
+      const { data: existingCats } = await supabase.from('categories').select('name');
+      const existingCatNames = new Set((existingCats || []).map((c: any) => c.name));
+      
+      const catsToInsert = INITIAL_CATEGORIES
+        .filter(cat => !existingCatNames.has(cat.name))
+        .map(({ id, ...rest }) => rest);
+
+      if (catsToInsert.length > 0) {
+        await supabase.from('categories').insert(catsToInsert);
+      }
+
+      fetchData();
+    } catch (err) {
+      console.error("Error seeding database:", err);
+      alert("Error al cargar el menú inicial. Revisa la consola.");
+    } finally {
+      setIsSavingBranding(false);
+    }
+  };
+
   const addToCart = (item: FoodItem, quantity: number = 1, additions: FoodItem[] = []) => {
     setOrderItems(prev => [...prev, { ...item, quantity, additions }]);
     setSelectedFoodForDetail(null);
@@ -284,6 +350,9 @@ const App: React.FC = () => {
 
   const handlePayment = async () => {
     if (!customerName) return alert("Ingresa tu nombre");
+    if (orderType === 'TABLE' && !tableNumber) return alert("Ingresa el número de mesa");
+    if (orderType === 'DELIVERY' && !address) return alert("Ingresa la dirección de entrega");
+
     setIsPaying(true);
     try {
       const newOrder = { 
@@ -291,13 +360,16 @@ const App: React.FC = () => {
         total: cartTotal, 
         status: OrderStatus.PENDING, 
         customerName, 
-        tableNumber: tableNumber || 'Llevar', 
+        tableNumber: orderType === 'TABLE' ? tableNumber : 'Domicilio', 
+        address: orderType === 'DELIVERY' ? address : '',
+        orderType,
         createdAt: new Date().toISOString() 
       };
       const { data, error } = await supabase.from('orders').insert([newOrder]).select();
       if (data && data[0]) {
         localStorage.setItem('active_order_id', data[0].id);
         setCurrentOrderTrackingId(data[0].id);
+        await fetchData(); // Force update orders list
       }
       setOrderItems([]);
       setPaymentSuccess(true);
@@ -397,8 +469,8 @@ const App: React.FC = () => {
         ) : (
           <>
             <SidebarItem icon={<LayoutGrid className="w-5 h-5" />} label="Todas" active={activeCategory === 'Todas'} onClick={() => {setActiveCategory('Todas'); setIsMobileMenuOpen(false);}} />
-            {categories.map(c => <SidebarItem key={c.id} icon={<span className="text-lg">{c.icon}</span>} label={c.name} active={activeCategory === c.name} onClick={() => {setActiveCategory(c.name); setIsMobileMenuOpen(false);}} />)}
-            {trackedOrder && (
+            {categories.map((c: any) => <SidebarItem key={c.id} icon={<span className="text-lg">{c.icon}</span>} label={c.name} active={activeCategory === c.name} onClick={() => {setActiveCategory(c.name); setIsMobileMenuOpen(false);}} />)}
+            {currentOrderTrackingId && (
               <SidebarItem icon={<Timer className="w-5 h-5" />} label="Mi Pedido" active={showTrackingView} onClick={() => {setShowTrackingView(true); setIsMobileMenuOpen(false);}} />
             )}
             <div className="pt-10 border-t border-white/5 mt-6"><button onClick={() => {setShowLogin(true); setIsMobileMenuOpen(false);}} className="w-full p-5 text-white/40 hover:text-white rounded-3xl flex items-center gap-4 font-black text-[9px] uppercase tracking-widest border border-white/5 transition-all"><Lock className="w-4 h-4" /> Staff</button></div>
@@ -418,9 +490,9 @@ const App: React.FC = () => {
           <div className="flex items-center gap-5"><button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-3 bg-white rounded-2xl shadow-premium active:scale-90 text-slate-900"><LayoutGrid className="w-5 h-5" /></button><h2 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter text-slate-900">{isStaffMode ? (activeView === 'kitchen' ? 'Cocina' : activeView === 'stats' ? 'Reportes' : 'Panel Admin') : restaurantSettings.name}</h2></div>
           {!isStaffMode && (
             <div className="flex items-center gap-3">
-              {trackedOrder && (
+              {currentOrderTrackingId && (
                 <button onClick={() => setShowTrackingView(true)} className="hidden sm:flex items-center gap-3 px-5 py-3.5 bg-orange-100 text-orange-600 rounded-2xl font-black text-[10px] uppercase shadow-inner border border-orange-200 animate-pulse">
-                  <Clock className="w-4 h-4" /> {trackedOrder.status === OrderStatus.READY ? '¡LISTO!' : 'EN PROGRESO'}
+                  <Clock className="w-4 h-4" /> {trackedOrder?.status === OrderStatus.READY ? '¡LISTO!' : 'EN PROGRESO'}
                 </button>
               )}
               <button onClick={() => setIsCartOpen(true)} className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl flex items-center gap-4 relative shadow-2xl active:scale-95 transition-all btn-press">
@@ -498,7 +570,7 @@ const App: React.FC = () => {
                              <td className="p-6">
                                <div className="flex flex-col">
                                  <span className="font-black text-slate-900 uppercase italic text-sm">{order.customerName}</span>
-                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#{order.id.slice(-4)} • Mesa {order.tableNumber}</span>
+                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">#{order.id.slice(-4)} • {order.orderType === 'DELIVERY' ? `Domicilio: ${order.address || ''}` : `Mesa ${order.tableNumber}`}</span>
                                </div>
                              </td>
                              <td className="p-6">
@@ -542,7 +614,18 @@ const App: React.FC = () => {
                 return (
                   <div key={order.id} className={`bg-white border-[3px] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
                     <div className="p-8 pb-6 border-b border-dashed flex justify-between items-start">
-                      <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span><span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA • {order.tableNumber}</span></div><p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p></div>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span>
+                          <span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">
+                            {order.orderType === 'DELIVERY' ? 'DOMICILIO' : `MESA • ${order.tableNumber}`}
+                          </span>
+                        </div>
+                        <p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p>
+                        {order.orderType === 'DELIVERY' && order.address && (
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{order.address}</p>
+                        )}
+                      </div>
                       <OrderTimer startTime={order.createdAt} status={order.status} />
                     </div>
                     <div className="p-10 flex-1 space-y-6">{order.items.map((item, idx) => (<div key={idx} className="space-y-2"><div className="flex items-center gap-5 text-lg font-black text-slate-800"><span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span><span className="uppercase truncate flex-1 tracking-tight">{item.name}</span></div>{item.additions && item.additions.length > 0 && (<div className="ml-15 flex flex-wrap gap-2">{item.additions.map((add, ai) => (<span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>))}</div>)}</div>))}</div>
@@ -569,17 +652,29 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="flex justify-between items-center px-6"><div><h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Menú</h4></div><button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl"><PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo</button></div>
+                  <div className="flex justify-between items-center px-6">
+                    <div>
+                      <h4 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900">Menú</h4>
+                    </div>
+                    <div className="flex gap-3">
+                      <button onClick={handleSeedDatabase} className="bg-emerald-600 text-white px-6 py-4 rounded-full font-black text-[10px] uppercase shadow-xl flex items-center gap-2">
+                        <DatabaseZap className="w-4 h-4" /> Cargar Inicial
+                      </button>
+                      <button onClick={() => { setEditingItem(null); setIsAdminFormOpen(true); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-[10px] uppercase shadow-xl">
+                        <PlusCircle className="w-4 h-4 inline mr-2" /> Nuevo
+                      </button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">{menuItems.map(item => (<div key={item.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex items-center gap-6"><img src={item.image} className="w-20 h-20 rounded-[1.2rem] object-cover shadow-lg" /><div className="flex-1 min-w-0"><h5 className="font-black uppercase text-xs italic mb-1 truncate text-slate-900">{item.name}</h5><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.category}</p></div><div className="flex items-center gap-3"><button onClick={() => { setEditingItem(item); setIsAdminFormOpen(true); }} className="p-3 bg-slate-50 text-slate-400 rounded-xl"><Edit2 className="w-4 h-4" /></button><button onClick={() => handleDeleteItem(item.id)} className="p-3 bg-rose-50 text-rose-400 rounded-xl"><Trash2 className="w-4 h-4" /></button></div></div>))}</div>
                 </div>
             </div>
           )}
-        </main>
+        </main>F
       </div>
 
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl z-[150] flex items-center justify-center p-6">
-          <div className="bg-white w-full max-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-12 text-center shadow-2xl">
              <div className="w-16 h-16 bg-slate-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 text-slate-900 shadow-inner"><Lock className="w-8 h-8" /></div>
              <input type="password" placeholder="••••" maxLength={4} className="w-full py-5 bg-slate-50 rounded-2xl text-center text-4xl font-black tracking-[0.8em] outline-none border border-slate-200 focus:border-orange-500 shadow-inner" autoFocus onChange={(e) => { if(e.target.value === '9999') { setIsStaffMode(true); setShowLogin(false); setActiveView('kitchen'); } }} />
              <button onClick={() => setShowLogin(false)} className="mt-8 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
@@ -588,37 +683,35 @@ const App: React.FC = () => {
       )}
 
       {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
-      {isCartOpen && <CartView cart={cart} setCart={setOrderItems} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
-      {showTrackingView && trackedOrder && <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />}
+      {isCartOpen && <CartView cart={cart} setCart={setOrderItems} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} orderType={orderType} setOrderType={setOrderType} address={address} setAddress={setAddress} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
+      {showTrackingView && currentOrderTrackingId && (
+        trackedOrder ? (
+          <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />
+        ) : (
+          <div className="fixed inset-0 z-[450] bg-slate-950 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-white font-black uppercase tracking-widest text-xs">Cargando Pedido...</p>
+            </div>
+          </div>
+        )
+      )}
 
       {isAdminFormOpen && (
         <AdminForm item={editingItem} categories={categories} onSave={async (d: any) => { 
-          try {
-            const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add'));
-            if (d.id && !isInitial) await supabase.from('menu').upsert(d);
-            else { const { id, ...newItem } = d; await supabase.from('menu').insert([newItem]); }
-            setIsAdminFormOpen(false); fetchData();
-          } catch (e) { console.error("Error saving item", e); }
+          const isInitial = d.id && (d.id.startsWith('b') || d.id.startsWith('c') || d.id.startsWith('p') || d.id.startsWith('add'));
+          if (d.id && !isInitial) await supabase.from('menu').upsert(d);
+          else { const { id, ...newItem } = d; await supabase.from('menu').insert([newItem]); }
+          setIsAdminFormOpen(false); fetchData();
         }} onClose={() => setIsAdminFormOpen(false)} />
       )}
 
       {isCategoryFormOpen && (
         <CategoryForm category={editingCategory} onSave={async (d: any) => { 
-          try {
-            // Un ID que empieza por 'cat' es un ID de INITIAL_CATEGORIES (local)
-            const isInitial = d.id && typeof d.id === 'string' && d.id.startsWith('cat');
-            if (d.id && !isInitial) {
-              await supabase.from('categories').upsert(d); 
-            } else { 
-              // Si es nuevo (id undefined) o es uno inicial, lo insertamos como nuevo en DB
-              const { id, ...newCat } = d; 
-              await supabase.from('categories').insert([newCat]); 
-            }
-            setIsCategoryFormOpen(false); 
-            fetchData(); 
-          } catch (e) {
-            console.error("Error al guardar categoría:", e);
-          }
+          const isInitial = d.id && d.id.startsWith('cat');
+          if (d.id && !isInitial) await supabase.from('categories').upsert(d); 
+          else { const { id, ...newCat } = d; await supabase.from('categories').insert([newCat]); }
+          setIsCategoryFormOpen(false); fetchData(); 
         }} onClose={() => setIsCategoryFormOpen(false)} />
       )}
     </div>
@@ -684,7 +777,12 @@ const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => vo
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Ubicación</p>
-                    <p className="text-xl font-black text-white italic uppercase tracking-tighter">MESA • {order.tableNumber}</p>
+                    <p className="text-xl font-black text-white italic uppercase tracking-tighter">
+                      {order.orderType === 'DELIVERY' ? 'DOMICILIO' : `MESA • ${order.tableNumber}`}
+                    </p>
+                    {order.orderType === 'DELIVERY' && order.address && (
+                      <p className="text-[10px] font-bold text-white/60 uppercase truncate max-w-[150px] mt-1">{order.address}</p>
+                    )}
                   </div>
                 </div>
              </div>
@@ -720,7 +818,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
         <div className="relative h-56 md:h-80 shrink-0">
           <img src={item.image} className="w-full h-full object-cover" />
           <button onClick={onClose} className="absolute top-6 right-6 p-3 bg-black/20 backdrop-blur-md rounded-2xl text-white"><X className="w-6 h-6" /></button>
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-t from-white via-white/80 to-transparent p-6 md:p-10 pt-16">
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/80 to-transparent p-6 md:p-10 pt-16">
              <div className="flex justify-between items-end gap-4"><div className="min-w-0"><h2 className="text-2xl md:text-5xl font-black uppercase italic tracking-tighter text-slate-900 leading-tight mb-1 truncate">{item.name}</h2><p className="text-[9px] md:text-xs font-black text-orange-600 uppercase tracking-widest">{item.category}</p></div><div className="text-right shrink-0"><span className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Subtotal</span><span className="text-2xl md:text-4xl font-black text-slate-900 italic tracking-tighter leading-none">${formatPrice(totalPrice)}</span></div></div>
           </div>
         </div>
@@ -740,7 +838,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
   );
 };
 
-const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, setTableNumber, cartTotal, isPaying, paymentSuccess, handlePayment, onClose }: any) => {
+const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, setTableNumber, orderType, setOrderType, address, setAddress, cartTotal, isPaying, paymentSuccess, handlePayment, onClose }: any) => {
   const removeItem = (idx: number) => setCart((prev: any[]) => prev.filter((_, i) => i !== idx));
   return (
     <div className="fixed inset-0 z-[200] flex justify-end">
@@ -757,7 +855,34 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
                 </div>
               );
             })}
-            {cart.length > 0 && <div className="pt-4 space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /><input type="text" placeholder="Mesa o Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /></div>}
+            {cart.length > 0 && (
+              <div className="pt-4 space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label>
+                  <input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" />
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Tipo de Pedido</label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
+                    <button onClick={() => setOrderType('TABLE')} className={`py-3 rounded-xl text-[9px] font-black uppercase transition-all ${orderType === 'TABLE' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>A la Mesa</button>
+                    <button onClick={() => setOrderType('DELIVERY')} className={`py-3 rounded-xl text-[9px] font-black uppercase transition-all ${orderType === 'DELIVERY' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Domicilio</button>
+                  </div>
+                </div>
+
+                {orderType === 'TABLE' ? (
+                  <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Número de Mesa</label>
+                    <input type="text" placeholder="Ej: 5" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" />
+                  </div>
+                ) : (
+                  <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Dirección de Entrega</label>
+                    <input type="text" placeholder="Calle 123 # 45 - 67" value={address} onChange={e => setAddress(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" />
+                  </div>
+                )}
+              </div>
+            )}
          </div>
          <div className="p-6 md:p-10 border-t glass pb-safe">
             <div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-1 leading-none">Total</span><span className="text-3xl font-black tracking-tighter italic leading-none">${formatPrice(cartTotal)}</span></div>
@@ -782,7 +907,7 @@ const AdminForm = ({ item, categories, onSave, onClose }: any) => {
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setData({ ...data, image: reader.result as string }); reader.readAsDataURL(file); } };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
+    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-4 overflow-y-auto"><div className="bg-white w-full max-w-xl rounded-[2.5rem] p-6 md:p-14 shadow-2xl text-slate-900 relative my-auto"><h2 className="text-2xl font-black uppercase italic tracking-tighter mb-6 text-center md:text-left">Gestionar <span className="text-orange-600 not-italic">Plato</span></h2><div className="space-y-4 md:space-y-6"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4 tracking-widest">Nombre</label><input type="text" value={data.name} onChange={e => setData({...data, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 focus:border-orange-500 shadow-inner" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Precio</label><input type="number" step="0.01" value={data.price} onChange={e => setData({...data, price: parseFloat(e.target.value) || 0})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-sm outline-none border border-slate-200 shadow-inner" /></div><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-4">Categoría</label><select value={data.category} onChange={e => setData({...data, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-xs outline-none border border-slate-200 shadow-inner uppercase appearance-none cursor-pointer">{categories.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div></div><div className="space-y-3"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imagen</label><div className="flex gap-4"><button onClick={() => localFileRef.current?.click()} className="text-slate-900 text-[9px] font-black uppercase flex items-center gap-1"><Upload className="w-3 h-3" /> CARGAR</button><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const img = await generateFoodImage(data.name); if (img) setData({ ...data, image: img }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><ImageIcon className="w-3 h-3" /> IA</button></div></div><div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 shadow-inner">{data.image && <img src={data.image} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-white shrink-0" />}<input type="text" value={data.image} onChange={e => setData({...data, image: e.target.value})} className="flex-1 bg-transparent font-bold text-[9px] outline-none truncate" placeholder="URL o carga archivo..." /><input type="file" ref={localFileRef} onChange={handleLocalUpload} className="hidden" accept="image/*" /></div></div><div className="space-y-1.5"><div className="flex justify-between px-4"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descripción</label><button onClick={async () => { if(!data.name) return; setIsGenerating(true); try { const desc = await improveDescription(data.name); setData({ ...data, description: desc }); } finally { setIsGenerating(false); } }} disabled={isGenerating} className="text-orange-600 text-[9px] font-black uppercase flex items-center gap-1"><Wand2 className="w-3 h-3" /> IA</button></div><textarea value={data.description} onChange={e => setData({...data, description: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs outline-none border border-slate-200 h-24 shadow-inner resize-none" /></div><div className="pt-4 md:pt-6"><button onClick={() => onSave(data)} className="w-full py-5 bg-slate-900 text-white rounded-full font-black uppercase text-[10px] tracking-[0.3em] shadow-2xl">Confirmar</button><button onClick={onClose} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Cerrar</button></div></div></div></div>
   );
 };
 
