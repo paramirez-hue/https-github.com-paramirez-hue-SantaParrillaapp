@@ -32,6 +32,11 @@ export enum PaymentStatus {
   FAILED = 'FAILED'
 }
 
+export enum OrderType {
+  TABLE = 'TABLE',
+  DELIVERY = 'DELIVERY'
+}
+
 export interface Order {
   id: string;
   items: OrderItem[];
@@ -41,6 +46,8 @@ export interface Order {
   customerName: string;
   createdAt: string | number;
   tableNumber?: string;
+  orderType: OrderType;
+  address?: string;
 }
 
 export type ViewType = 'menu' | 'orders' | 'kitchen' | 'stats' | 'ai' | 'admin';
