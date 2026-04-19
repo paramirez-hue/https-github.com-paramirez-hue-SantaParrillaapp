@@ -6,7 +6,7 @@ import {
   Settings, LayoutGrid, Image as ImageIcon, Wand2, Save, Check, PlusCircle, Upload, ArrowRight, Tag, ChevronRight, AlertCircle, Play, PackageCheck, BarChart3, TrendingUp, DollarSign, FileSpreadsheet, DatabaseZap, Clock, Bell, UtensilsCrossed, Sparkles, Calendar, History
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category, OrderType } from './types';
+import { FoodItem, Order, OrderItem, OrderStatus, ViewType, Category } from './types';
 import { INITIAL_MENU, INITIAL_CATEGORIES, DEFAULT_BRANDING } from './constants';
 import { improveDescription, generateFoodImage } from './geminiService';
 
@@ -109,8 +109,6 @@ const App: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [customerName, setCustomerName] = useState('');
   const [tableNumber, setTableNumber] = useState('');
-  const [address, setAddress] = useState('');
-  const [orderType, setOrderType] = useState<OrderType>(OrderType.TABLE);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
@@ -139,7 +137,7 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
       const { data: menuData } = await supabase.from('menu').select('*');
-      setMenuItems(menuData && menuData.length > 0 ? menuData : INITIAL_MENU);
+      setMenuItems(menuData || []);
 
       const { data: catData } = await supabase.from('categories').select('*').order('name');
       setCategories(catData && catData.length > 0 ? catData : INITIAL_CATEGORIES);
@@ -285,9 +283,6 @@ const App: React.FC = () => {
 
   const handlePayment = async () => {
     if (!customerName) return alert("Ingresa tu nombre");
-    if (orderType === OrderType.TABLE && !tableNumber) return alert("Ingresa el número de mesa");
-    if (orderType === OrderType.DELIVERY && !address) return alert("Ingresa la dirección de entrega");
-    
     setIsPaying(true);
     try {
       const newOrder = { 
@@ -295,8 +290,7 @@ const App: React.FC = () => {
         total: cartTotal, 
         status: OrderStatus.PENDING, 
         customerName, 
-        tableNumber: orderType === OrderType.TABLE ? tableNumber : address,
-        orderType,
+        tableNumber: tableNumber || 'Llevar', 
         createdAt: new Date().toISOString() 
       };
       const { data, error } = await supabase.from('orders').insert([newOrder]).select();
@@ -547,18 +541,7 @@ const App: React.FC = () => {
                 return (
                   <div key={order.id} className={`bg-white border-[3px] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col relative animate-fade-scale transition-all ${styles.card}`}>
                     <div className="p-8 pb-6 border-b border-dashed flex justify-between items-start">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span>
-                          <span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">
-                            {order.orderType === OrderType.DELIVERY ? 'DOMICILIO' : `MESA • ${order.tableNumber}`}
-                          </span>
-                        </div>
-                        <p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p>
-                        {order.orderType === OrderType.DELIVERY && order.address && (
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{order.address}</p>
-                        )}
-                      </div>
+                      <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><span className={`px-4 py-1 rounded-2xl text-xs font-black uppercase tracking-widest shadow-md ${styles.badge}`}>{styles.label}</span><span className="font-mono text-sm text-slate-400 font-bold uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-xl">MESA • {order.tableNumber}</span></div><p className="text-3xl font-black text-slate-950 uppercase italic leading-none">{order.customerName}</p></div>
                       <OrderTimer startTime={order.createdAt} status={order.status} />
                     </div>
                     <div className="p-10 flex-1 space-y-6">{order.items.map((item, idx) => (<div key={idx} className="space-y-2"><div className="flex items-center gap-5 text-lg font-black text-slate-800"><span className="bg-slate-950 text-white w-10 h-10 flex items-center justify-center rounded-xl text-xs font-black shadow-lg">{item.quantity}</span><span className="uppercase truncate flex-1 tracking-tight">{item.name}</span></div>{item.additions && item.additions.length > 0 && (<div className="ml-15 flex flex-wrap gap-2">{item.additions.map((add, ai) => (<span key={ai} className="bg-orange-50 text-orange-600 text-[10px] font-black px-3 py-1 rounded-full border border-orange-100 uppercase italic tracking-wider">+{add.name}</span>))}</div>)}</div>))}</div>
@@ -604,25 +587,7 @@ const App: React.FC = () => {
       )}
 
       {selectedFoodForDetail && <FoodDetailModal item={selectedFoodForDetail} additions={additionItems} onAdd={addToCart} onClose={() => setSelectedFoodForDetail(null)} />}
-      {isCartOpen && (
-        <CartView 
-          cart={cart} 
-          setCart={setOrderItems} 
-          customerName={customerName} 
-          setCustomerName={setCustomerName} 
-          tableNumber={tableNumber} 
-          setTableNumber={setTableNumber} 
-          address={address}
-          setAddress={setAddress}
-          orderType={orderType}
-          setOrderType={setOrderType}
-          cartTotal={cartTotal} 
-          isPaying={isPaying} 
-          paymentSuccess={paymentSuccess} 
-          handlePayment={handlePayment} 
-          onClose={() => setIsCartOpen(false)} 
-        />
-      )}
+      {isCartOpen && <CartView cart={cart} setCart={setOrderItems} customerName={customerName} setCustomerName={setCustomerName} tableNumber={tableNumber} setTableNumber={setTableNumber} cartTotal={cartTotal} isPaying={isPaying} paymentSuccess={paymentSuccess} handlePayment={handlePayment} onClose={() => setIsCartOpen(false)} />}
       {showTrackingView && trackedOrder && <OrderTrackingView order={trackedOrder} onClose={() => setShowTrackingView(false)} />}
 
       {isAdminFormOpen && (
@@ -704,8 +669,8 @@ const OrderTrackingView = ({ order, onClose }: { order: Order, onClose: () => vo
                     <OrderTimer startTime={order.createdAt} light />
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">{order.orderType === OrderType.DELIVERY ? 'Dirección' : 'Ubicación'}</p>
-                    <p className="text-xl font-black text-white italic uppercase tracking-tighter">{order.orderType === OrderType.DELIVERY ? order.address : `MESA • ${order.tableNumber}`}</p>
+                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Ubicación</p>
+                    <p className="text-xl font-black text-white italic uppercase tracking-tighter">MESA • {order.tableNumber}</p>
                   </div>
                 </div>
              </div>
@@ -761,7 +726,7 @@ const FoodDetailModal = ({ item, additions, onAdd, onClose }: { item: FoodItem, 
   );
 };
 
-const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, setTableNumber, address, setAddress, orderType, setOrderType, cartTotal, isPaying, paymentSuccess, handlePayment, onClose }: any) => {
+const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, setTableNumber, cartTotal, isPaying, paymentSuccess, handlePayment, onClose }: any) => {
   const removeItem = (idx: number) => setCart((prev: any[]) => prev.filter((_, i) => i !== idx));
   return (
     <div className="fixed inset-0 z-[200] flex justify-end">
@@ -778,51 +743,7 @@ const CartView = ({ cart, setCart, customerName, setCustomerName, tableNumber, s
                 </div>
               );
             })}
-            {cart.length > 0 && (
-              <div className="pt-4 space-y-6">
-                <div className="flex p-1.5 bg-slate-100 rounded-2xl gap-2">
-                  <button 
-                    onClick={() => setOrderType(OrderType.TABLE)}
-                    className={`flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${orderType === OrderType.TABLE ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
-                  >
-                    A La Mesa
-                  </button>
-                  <button 
-                    onClick={() => setOrderType(OrderType.DELIVERY)}
-                    className={`flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${orderType === OrderType.DELIVERY ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
-                  >
-                    Domicilio
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  <input 
-                    type="text" 
-                    placeholder="Tu Nombre" 
-                    value={customerName} 
-                    onChange={e => setCustomerName(e.target.value)} 
-                    className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" 
-                  />
-                  {orderType === OrderType.TABLE ? (
-                    <input 
-                      type="text" 
-                      placeholder="Número de Mesa" 
-                      value={tableNumber} 
-                      onChange={e => setTableNumber(e.target.value)} 
-                      className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" 
-                    />
-                  ) : (
-                    <input 
-                      type="text" 
-                      placeholder="Dirección de Entrega" 
-                      value={address} 
-                      onChange={e => setAddress(e.target.value)} 
-                      className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" 
-                    />
-                  )}
-                </div>
-              </div>
-            )}
+            {cart.length > 0 && <div className="pt-4 space-y-3"><input type="text" placeholder="Tu Nombre" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /><input type="text" placeholder="Mesa o Dirección" value={tableNumber} onChange={e => setTableNumber(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-[10px] uppercase border border-slate-100 focus:border-orange-500 shadow-inner" /></div>}
          </div>
          <div className="p-6 md:p-10 border-t glass pb-safe">
             <div className="flex justify-between items-end mb-6 text-slate-900"><span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-1 leading-none">Total</span><span className="text-3xl font-black tracking-tighter italic leading-none">${formatPrice(cartTotal)}</span></div>
